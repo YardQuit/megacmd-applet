@@ -1,125 +1,198 @@
-# omarchy-megacmd
+# megacmd-applet
 
-MEGA in the [Omarchy](https://omarchy.org) bar: sync folders, backups,
-storage and transfers, driven by [MEGAcmd](https://github.com/meganz/MEGAcmd)
-instead of the MEGAsync desktop app.
+MEGA in the desktop's panel: sync folders, backups, storage and transfers,
+driven by [MEGAcmd](https://github.com/meganz/MEGAcmd) instead of the MEGAsync
+desktop app. It runs in the [Omarchy](https://omarchy.org) bar, KDE Plasma 6,
+GNOME Shell 48–51 and the COSMIC panel.
 
-- A cloud icon in the bar with a coloured badge for the overall state:
-  up to date, syncing, paused, storage nearly full, an error, or logged out.
-  Badge colours come from the current Omarchy theme.
-- A panel to pause, resume, add and remove sync folders and scheduled,
-  versioned backups, with storage use and transfer progress.
+- A cloud icon in the panel showing the overall state: up to date, syncing,
+  paused, storage nearly full, an error, or logged out.
+- A popup to pause, resume, add and remove sync folders and scheduled,
+  versioned backups, with storage use and transfer progress, and a switch
+  that pauses or resumes all syncing.
 - A desktop notification once per problem: a sync error, a failed backup,
   being logged out, the MEGAcmd engine stopping, and storage use crossing 90%
-  and 95%. Notifications name no folder; clicking one opens the panel, which
+  and 95%. Notifications name no folder; clicking one opens the popup, which
   shows it.
-- The widget never starts the MEGAcmd engine by itself. When the engine is
-  stopped it says so, and "Start MEGAcmd" in the panel starts it again.
+- The applet never starts the MEGAcmd engine by itself. When the engine is
+  stopped it says so, and "Start MEGAcmd" in the popup starts it again.
 
-![The panel open under the bar icon](preview.png)
+| Omarchy | KDE Plasma | GNOME Shell | COSMIC |
+|---|---|---|---|
+| ![Omarchy](preview.png) | ![KDE Plasma](previews/kde.png) | ![GNOME Shell](previews/gnome.png) | ![COSMIC](previews/cosmic.png) |
+
+Every desktop shares one core, a small Python program in `core/` that reads
+MEGAcmd's state, decides what it means, keeps track of which notifications
+were already shown and runs the actions. Each desktop's part only draws what
+the core reports.
 
 ## Requirements
 
-- Omarchy with its Quickshell bar (`omarchy-shell`).
-- MEGAcmd. On Arch Linux it comes from MEGA's own signed repository; see
-  [MEGA's Linux downloads](https://mega.io/cmd#download). The package is
-  `megacmd`.
-- `python3`, `gum`, `pgrep` and a Nerd Font, which Omarchy already provides.
+- MEGAcmd, from [MEGA's Linux downloads](https://mega.io/cmd#download) (the
+  package is `megacmd`).
+- `python3`, `gum` (for the guided dialogs) and `pgrep`.
+- A terminal for the guided dialogs. The applet uses `xdg-terminal-exec` when
+  installed, else the first it finds of Ptyxis, GNOME Console, GNOME
+  Terminal, Konsole, COSMIC Terminal, kitty, foot and Alacritty, else
+  `$TERMINAL`; a terminal command can also be set in the settings.
 
 ## Installation
 
-1. Run the MEGAcmd engine from login, so syncs and backups run without a
-   window:
+First run the MEGAcmd engine from login, so syncs and backups run without a
+window:
 
-   ```sh
-   cp systemd/mega-cmd-server.service ~/.config/systemd/user/
-   systemctl --user enable --now mega-cmd-server.service
-   ```
+```sh
+mkdir -p ~/.config/systemd/user
+cp systemd/mega-cmd-server.service ~/.config/systemd/user/
+systemctl --user enable --now mega-cmd-server.service
+```
 
-2. Add the plugin to the bar:
+Then install the applet for your desktop. The KDE, GNOME and COSMIC files are
+attached to each [release](https://github.com/YardQuit/megacmd-applet/releases),
+with their `SHA256SUMS`; each can also be built from a checkout with `make`.
 
-   ```sh
-   omarchy plugin add https://github.com/yardquit/omarchy-megacmd --enable
-   ```
+### Omarchy
 
-3. Click the cloud icon and choose **Log in to MEGA**. A terminal opens
-   MEGAcmd's own shell, which asks for the password and 2FA code itself, so
-   the password never appears in a command line. The session is kept, so this
-   is needed only once.
+```sh
+omarchy plugin add https://github.com/yardquit/megacmd-applet --enable
+```
+
+### KDE Plasma 6
+
+```sh
+kpackagetool6 --type Plasma/Applet --install megacmd-applet-kde-<version>.plasmoid
+```
+
+or `make install-kde` from a checkout. Then add **MEGA** to a panel from
+*Add or Manage Widgets*.
+
+### GNOME Shell
+
+```sh
+gnome-extensions install megacmd@yardquit.github.io.shell-extension.zip
+```
+
+or `make install-gnome` from a checkout. Log out and in, then turn it on with
+`gnome-extensions enable megacmd@yardquit.github.io` or in the Extensions app.
+
+### COSMIC
+
+Unpack the release archive under `/usr`:
+
+```sh
+sudo tar -xzf megacmd-applet-cosmic-<version>-x86_64.tar.gz -C /usr --strip-components=1
+```
+
+or build and install it for yourself with `make install-cosmic`, which puts
+it under `~/.local` (set `PREFIX` for elsewhere). Building needs Rust and the
+development files for libxkbcommon, Wayland, EGL, D-Bus and systemd. Then add
+**MEGA** in *Settings → Desktop → Panel → Applets*.
+
+### Logging in
+
+Click the cloud icon and choose **Log in to MEGA**. A terminal opens
+MEGAcmd's own shell, which asks for the password and 2FA code itself, so the
+password never appears in a command line. The session is kept, so this is
+needed only once. `mega-login` in a terminal does the same.
 
 If MEGAsync is installed, quit it before adding the same folders here: two
 programs syncing one folder produce conflicting copies.
 
 ## Removal
 
+| Desktop | Command |
+|---|---|
+| Omarchy | `omarchy plugin remove yardquit.mega` |
+| KDE Plasma | `kpackagetool6 --type Plasma/Applet --remove io.github.yardquit.megacmd` |
+| GNOME Shell | `gnome-extensions uninstall megacmd@yardquit.github.io` |
+| COSMIC | remove it from the panel, then delete `bin/cosmic-applet-megacmd`, `share/megacmd-applet/`, `share/applications/io.github.yardquit.MegaCmd.desktop` and `share/icons/hicolor/scalable/apps/io.github.yardquit.MegaCmd-*` from where it was installed |
+
+To stop the engine as well:
+
 ```sh
-omarchy plugin remove yardquit.mega
 systemctl --user disable --now mega-cmd-server.service
 rm ~/.config/systemd/user/mega-cmd-server.service
 ```
 
-Removing the widget leaves MEGAcmd's syncs and backups as they are; stopping
-the engine pauses them until it runs again. Remove them in the panel first to
+Removing the applet leaves MEGAcmd's syncs and backups as they are; stopping
+the engine pauses them until it runs again. Remove them in the popup first to
 stop them for good.
 
 ## Use
 
-| In the bar | Does |
-|---|---|
-| Left click | Open the panel |
-| Right click | Pause or resume all syncing |
-| Middle click | Refresh |
-
-In the panel, the arrow keys move between rows and Enter runs a row's main
-action (pause or resume a sync, change a backup's settings, add a sync or
-backup). `o` opens the selected folder, `s` changes the selected backup's
-schedule and versions, `x` pressed twice removes the selected sync or backup
-(its files stay where they are), `p` pauses or resumes all syncing, `r`
-refreshes, and Escape closes the panel.
+Click the cloud icon to open the popup. Each sync folder has buttons to pause
+or resume it, open its folder and remove it; each backup has buttons to
+change its schedule and the number kept, open its folder and remove it.
+Removing asks for a second press, and the files stay where they are.
 
 **Add sync…** and **Add backup…** open a short guided dialog in a terminal:
 pick the local folder, confirm or change the suggested MEGA folder and, for a
 backup, choose the schedule and how many backups to keep. Each backup is a
-dated copy named `<folder>_bk_<time>` inside the chosen MEGA folder. A
-backup's settings button (or `s`) changes its schedule and the number kept,
-offering the current values first; backups already made stay as they are.
+dated copy named `<folder>_bk_<time>` inside the chosen MEGA folder. Changing
+a backup offers the current values first; backups already made stay as they
+are.
+
+In the Omarchy bar, a right click pauses or resumes all syncing and a middle
+click refreshes. In its panel, the arrow keys move between rows and Enter
+runs a row's main action; `o` opens the selected folder, `s` changes the
+selected backup, `x` pressed twice removes the selected sync or backup, `p`
+pauses or resumes all syncing, `r` refreshes, and Escape closes the panel.
 
 ## Settings
 
-Set these on the widget's entry in `~/.config/omarchy/shell.json`:
-
-```json
-{ "id": "yardquit.mega", "syncFolder": "/Sync", "backupFolder": "/Backups" }
-```
-
 | Setting | Default | Meaning |
 |---|---|---|
-| `syncFolder` | `/` | MEGA folder suggested as the parent of a new sync |
-| `backupFolder` | `/Backups` | MEGA folder suggested for new backups |
-| `refreshIntervalSec` | `60` | How often to check MEGAcmd while the panel is closed (every 3 seconds while it is open) |
+| Refresh interval | 60 | How often to check MEGAcmd while the popup is closed, in seconds (every 3 seconds while it is open) |
+| MEGA folder for new syncs | `/` | Suggested parent folder in MEGA when adding a sync |
+| MEGA folder for backups | `/Backups` | Suggested folder in MEGA for new backups |
+| Terminal command | empty | Command that runs a program in a terminal, such as `kitty` or `konsole -e`; empty finds one |
+| Preview | empty | A saved state from `fixtures/` to show instead of the live one |
 
-## Commands
+Where to set them:
 
-The widget answers `omarchy-shell yardquit.mega <command>`:
-
-| Command | Does |
-|---|---|
-| `open`, `close`, `toggle` | Show or hide the panel |
-| `refresh` | Check MEGAcmd now |
-| `status` | Print the overall state |
-| `preview <state>` | Show a saved state from `fixtures/` instead of the live one |
-| `live` | Return to the live state |
+- **Omarchy**: on the widget's entry in `~/.config/omarchy/shell.json`, as
+  `refreshIntervalSec`, `syncFolder` and `backupFolder`:
+  `{ "id": "yardquit.mega", "syncFolder": "/Sync" }`. The terminal is
+  Omarchy's own.
+- **KDE Plasma**: the widget's *Configure MEGA…* dialog.
+- **GNOME Shell**: the extension's preferences (`gnome-extensions prefs
+  megacmd@yardquit.github.io`).
+- **COSMIC**: one file per setting in
+  `~/.config/cosmic/io.github.yardquit.MegaCmd/v1/`, named
+  `refresh_interval_sec`, `sync_folder`, `backup_folder`, `terminal` and
+  `preview_name`, holding a number or a quoted string, such as `"/Sync"`. The
+  applet picks up changes at once.
 
 The saved states are `ok`, `syncing`, `paused`, `sync-error`,
 `backup-failed`, `storage-90`, `storage-95`, `logged-out` and `stopped`.
 Previews also send their notifications, marked "(preview)". While a preview
-is shown, the panel's actions do nothing, as its syncs and backups are only
+is shown, the popup's actions do nothing, as its syncs and backups are only
 examples.
+
+The Omarchy widget also answers `omarchy-shell yardquit.mega <command>`:
+`open`, `close` and `toggle` show or hide the panel, `refresh` checks MEGAcmd
+now, `status` prints the overall state, `preview <state>` shows a saved state
+and `live` returns to the live one.
+
+## Command line
+
+The core runs on its own as `bin/megacmd-applet`:
+
+| Command | Does |
+|---|---|
+| `status` | Print MEGAcmd's state, its meaning and texts as JSON, with any new notifications |
+| `pause ID`, `resume ID`, `remove-sync ID` | Pause, resume or remove a sync |
+| `remove-backup TAG` | Remove a backup; its files stay |
+| `pause-all`, `resume-all`, `toggle-all` | Pause or resume every sync |
+| `guided NAME [ARGS]` | Open a guided dialog in a terminal |
+
+`status --fixture FILE --home /home/user` reads a saved state instead of
+asking MEGAcmd. `megacmd-applet --help` lists every option.
 
 ## Privacy
 
 Other accounts on the same computer can see the command lines of running
-programs. The widget's regular status check passes no folder names, and its
+programs. The applet's regular status check passes no folder names, and its
 notifications name none. Folder paths do appear in command lines when you act
 yourself: opening a folder starts the file manager with its path, and adding
 or changing a sync or backup runs MEGAcmd's commands, which take the paths as
@@ -127,40 +200,42 @@ arguments, in a terminal that also shows the suggested MEGA folder.
 
 ## Development
 
-Clone the repository and link it into Omarchy's plugin folder:
+| Folder | Holds |
+|---|---|
+| `core/megacmd_applet/` | The shared core: reading MEGAcmd (`megacmd.py`), state rules and texts (`model.py`), the view each desktop draws (`view.py`), notifications (`notices.py`), actions (`actions.py`) and the command line (`cli.py`) |
+| `bin/` | The core's command, and the guided terminal dialogs: log in, add a sync, add or change a backup |
+| `fixtures/` | Saved states for previews and tests |
+| `omarchy/` | The Omarchy plugin (`manifest.json` at the top level points into it) |
+| `kde/` | The Plasma widget |
+| `gnome/` | The GNOME Shell extension |
+| `cosmic/` | The COSMIC applet, in Rust with libcosmic |
+| `tests/` | The test suite |
 
 ```sh
-git clone https://github.com/yardquit/omarchy-megacmd
-ln -s "$PWD/omarchy-megacmd" ~/.config/omarchy/plugins/yardquit.mega
+make test        # run the tests
+make kde gnome   # build the Plasma widget and GNOME extension in build/
+make cosmic      # build the COSMIC applet
+make dist        # build the release files in build/dist/
+```
+
+To work on the Omarchy widget, link a checkout into Omarchy's plugin folder
+and run `omarchy restart shell` after changing QML files:
+
+```sh
+ln -s "$PWD" ~/.config/omarchy/plugins/yardquit.mega
 omarchy plugin enable yardquit.mega
 ```
 
-After changing QML files, run `omarchy restart shell`; the bar's automatic
-reload can keep running the previous version.
-
-Run the tests with:
-
-```sh
-python3 -m unittest discover -s tests
-```
-
-| File | Purpose |
-|---|---|
-| `status.py` | Collects MEGAcmd's state and prints it as JSON |
-| `Service.qml` | The plugin's service, loaded once: polls `status.py`, runs actions, sends notifications |
-| `Panel.qml` | Bar button and panel, one per bar, all showing the service's state |
-| `MegaIcon.qml` | Cloud icon with the state badge |
-| `StateBadge.qml` | Round badge with the state glyph |
-| `ThemePalette.qml` | Reads the theme's colours for the badges |
-| `Model.js` | Display text and state rules |
-| `bin/` | Guided terminal dialogs: log in, add a sync, add or change a backup |
-| `fixtures/` | Saved states for previews and tests |
+The version is set in `manifest.json`; the KDE, GNOME and COSMIC metadata
+repeat it, and a test checks that they match. A release is made by pushing a
+tag `v<version>`, which builds the release files and attaches them.
 
 ## Credits
 
-The panel follows the structure of Omarchy's own Dropbox and Tailscale
-widgets and uses Omarchy's shell components. MEGA and MEGAcmd are made by
-MEGA Limited.
+The Omarchy panel follows the structure of Omarchy's own Dropbox and
+Tailscale widgets and uses Omarchy's shell components. The COSMIC applet
+follows the layout of the applets in COSMIC's own `cosmic-applets`. MEGA and
+MEGAcmd are made by MEGA Limited.
 
 ## Licence
 

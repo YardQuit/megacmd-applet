@@ -1,0 +1,22 @@
+# Cargo.toml: the MEGA applet for the COSMIC panel.
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[package]
+name = "cosmic-applet-megacmd"
+version = "0.2.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "MEGA sync folders, backups, storage and transfers in the COSMIC panel, using MEGAcmd."
+repository = "https://github.com/YardQuit/megacmd-applet"
+
+[dependencies]
+notify-rust = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "rt"] }
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic"
+rev = "430f3d48a97d8779f9c1985473912e594ccca1ae"
+default-features = false
+features = ["applet", "tokio", "wayland"]

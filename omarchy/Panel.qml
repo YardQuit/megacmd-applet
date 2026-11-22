@@ -8,7 +8,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
-import "Model.js" as Model
+import "Glyphs.js" as Glyphs
 
 // Bar icon showing MEGAcmd's overall state, and a keyboard-navigable panel to
 // pause, resume, add and remove syncs and backups. Enter runs a row's main
@@ -38,12 +38,12 @@ Panel {
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string kind: mega.kind
-  // Theme colours by name, for the state badges (see Model.badgeColorName).
+  // Theme colours by name, for the state badges the shared core names.
   readonly property var stateColors: ({
     red: themeColors.red, orange: themeColors.orange, yellow: themeColors.yellow,
     blue: themeColors.blue, green: themeColors.green
   })
-  readonly property color badgeColor: stateColors[Model.badgeColorName(kind)]
+  readonly property color badgeColor: stateColors[mega.badgeColour]
   readonly property color panelBackground: Commons.Color.background
 
   // Keyboard targets in display order: "header", "sync:N", "addSync",
@@ -110,7 +110,7 @@ Panel {
   function requestRemove(target) {
     var kind = String(target).split(":")[0]
     var item = itemFor(target)
-    var key = Model.itemKey(kind, item)
+    var key = item ? item.key : ""
     if (key === "") return
     if (pendingRemove !== key) {
       pendingRemove = key
@@ -167,16 +167,16 @@ Panel {
     readonly property bool running: true
     readonly property bool loggedIn: false
     readonly property string email: ""
-    readonly property double usedBytes: 0
-    readonly property double totalBytes: 0
-    readonly property double usagePercent: 0
     readonly property var syncs: []
     readonly property var backups: []
-    readonly property var transfers: ({})
+    readonly property string usageText: ""
+    readonly property int storageLevel: 0
+    readonly property string transfersText: ""
     readonly property string lastError: "MEGA service not loaded"
     readonly property string actionStatus: ""
-    readonly property string home: ""
     readonly property string kind: "off"
+    readonly property string kindText: "Not logged in"
+    readonly property string badgeColour: "orange"
     readonly property bool anyRunning: false
     readonly property bool busy: false
     function setPanelOpen(panel, open) {}
@@ -202,7 +202,7 @@ Panel {
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
     function refresh(): string { mega.refresh(); return "ok" }
-    function status(): string { return Model.overallText(root.kind) }
+    function status(): string { return mega.kindText }
     function preview(name: string): string { mega.preview(name); return "preview " + name }
     function live(): string { mega.preview(""); return "live" }
   }
@@ -221,8 +221,8 @@ Panel {
     bar: root.bar
     // The cloud is the button's own glyph, so the bar sizes it like its other
     // icons; the badge sits on top and takes no part in that sizing.
-    text: Model.ICON_CLOUD
-    tooltipText: mega.loggedIn ? "MEGA: " + Model.overallText(root.kind) : "MEGA: not logged in"
+    text: Glyphs.ICON_CLOUD
+    tooltipText: mega.loggedIn ? "MEGA: " + mega.kindText : "MEGA: not logged in"
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) mega.toggleAll()
       else if (buttonCode === Qt.MiddleButton) mega.refresh()
@@ -295,7 +295,7 @@ Panel {
               id: hero
               width: parent.width
               title: "MEGA"
-              meta: mega.installed ? Model.overallText(root.kind) : "MEGAcmd is not installed"
+              meta: mega.installed ? mega.kindText : "MEGAcmd is not installed"
               detail: mega.email
               foreground: root.foreground
               fontFamily: root.fontFamily
@@ -358,15 +358,15 @@ Panel {
 
             InfoPair {
               label: "Stored"
-              value: Model.usageText(mega.usedBytes, mega.totalBytes, mega.usagePercent)
-              valueColor: Model.storageLevel(mega.usagePercent) > 0 ? root.urgent : root.foreground
+              value: mega.usageText
+              valueColor: mega.storageLevel > 0 ? root.urgent : root.foreground
             }
 
             Text {
               textFormat: Text.PlainText
               visible: text !== ""
               width: parent.width
-              text: Model.transfersText(mega.transfers)
+              text: mega.transfersText
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -390,12 +390,13 @@ Panel {
                 required property int index
                 width: parent.width
                 target: "sync:" + index
-                itemKey: Model.itemKey("sync", modelData)
-                iconKind: Model.syncKind(modelData)
-                title: Model.homePath(modelData.local, mega.home) + "  ↔  " + modelData.remote
-                meta: Model.syncMeta(modelData)
-                toggleGlyph: Model.syncPaused(modelData) ? "󰐊" : "󰏤"
-                toggleTip: Model.syncPaused(modelData) ? "Resume" : "Pause"
+                itemKey: modelData.key
+                iconKind: modelData.kind
+                iconColour: modelData.badgeColour
+                title: modelData.localDisplay + "  ↔  " + modelData.remote
+                meta: modelData.meta
+                toggleGlyph: modelData.paused ? "󰐊" : "󰏤"
+                toggleTip: modelData.paused ? "Resume" : "Pause"
               }
             }
 
@@ -424,11 +425,11 @@ Panel {
                 required property int index
                 width: parent.width
                 target: "backup:" + index
-                itemKey: Model.itemKey("backup", modelData)
-                glyph: Model.ICON_BACKUP
-                glyphColor: Model.backupFailed(modelData) ? root.stateColors.red : (modelData.lastStatus ? root.stateColors.green : root.foreground)
-                title: Model.homePath(modelData.local, mega.home) + "  →  " + modelData.remote
-                meta: Model.backupMeta(modelData)
+                itemKey: modelData.key
+                glyph: Glyphs.ICON_BACKUP
+                glyphColor: modelData.failed ? root.stateColors.red : (modelData.lastStatus ? root.stateColors.green : root.foreground)
+                title: modelData.localDisplay + "  →  " + modelData.remote
+                meta: modelData.meta
                 toggleGlyph: ""
               }
             }
@@ -508,6 +509,7 @@ Panel {
     property string target: ""
     property string itemKey: ""
     property string iconKind: ""
+    property string iconColour: "green"
     property string glyph: ""
     property color glyphColor: root.foreground
     property string title: ""
@@ -539,7 +541,7 @@ Panel {
         size: Style.font.icon
         kind: itemRow.iconKind
         color: root.foreground
-        badgeColor: root.stateColors[Model.badgeColorName(itemRow.iconKind)]
+        badgeColor: root.stateColors[itemRow.iconColour]
         ringColor: root.panelBackground
         fontFamily: root.fontFamily
         Layout.alignment: Qt.AlignVCenter

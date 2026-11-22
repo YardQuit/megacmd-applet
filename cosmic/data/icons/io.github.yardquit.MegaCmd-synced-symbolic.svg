@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- io.github.yardquit.MegaCmd-synced-symbolic.svg: the MEGA applet's panel icon, up to date. -->
+  <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+  <g fill="#2e3436">
+    <path fill-rule="evenodd" d="M8 2.5a4.5 4.5 0 0 0-4.27 3.07A4 4 0 0 0 4.5 13.5h7.25a3.75 3.75 0 0 0 .6-7.45A4.5 4.5 0 0 0 8 2.5zM8 4a3 3 0 0 0-2.9 2.23l-.17.66-.68.07A2.5 2.5 0 0 0 4.5 12h7.25a2.25 2.25 0 0 0 .2-4.49l-.9-.08-.15-.89A3 3 0 0 0 8 4z"/>
+    <path d="M6 8.9l1.2 1.2L9.9 7.4l.7.7-3.4 3.4-1.9-1.9z"/>
+  </g>
+</svg>

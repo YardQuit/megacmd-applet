@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- org.gnome.shell.extensions.megacmd.gschema.xml: settings of the MEGA extension. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<schemalist>
+  <schema id="org.gnome.shell.extensions.megacmd" path="/org/gnome/shell/extensions/megacmd/">
+    <key name="refresh-interval" type="i">
+      <range min="10" max="3600"/>
+      <default>60</default>
+      <summary>Refresh interval</summary>
+      <description>How often to check MEGAcmd while the menu is closed, in seconds.</description>
+    </key>
+    <key name="sync-folder" type="s">
+      <default>"/"</default>
+      <summary>MEGA folder for new syncs</summary>
+      <description>Suggested parent folder in MEGA when adding a sync.</description>
+    </key>
+    <key name="backup-folder" type="s">
+      <default>"/Backups"</default>
+      <summary>MEGA folder for backups</summary>
+      <description>Suggested parent folder in MEGA when adding a backup.</description>
+    </key>
+    <key name="terminal" type="s">
+      <default>""</default>
+      <summary>Terminal command</summary>
+      <description>Command that runs a program in a terminal, for the guided dialogs; empty finds one.</description>
+    </key>
+    <key name="preview-name" type="s">
+      <default>""</default>
+      <summary>Preview</summary>
+      <description>Saved state from fixtures/ to show instead of MEGAcmd's; empty for the live state.</description>
+    </key>
+  </schema>
+</schemalist>

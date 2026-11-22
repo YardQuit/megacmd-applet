@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "yardquit.mega",
   "name": "MEGA",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "yardquit",
   "license": "GPL-3.0-or-later",
   "description": "MEGA sync folders, backups, storage and transfers in the Omarchy bar, using MEGAcmd.",
@@ -11,8 +11,8 @@
     "bar-widget"
   ],
   "entryPoints": {
-    "service": "Service.qml",
-    "barWidget": "Panel.qml"
+    "service": "omarchy/Service.qml",
+    "barWidget": "omarchy/Panel.qml"
   },
   "barWidget": {
     "displayName": "MEGA",

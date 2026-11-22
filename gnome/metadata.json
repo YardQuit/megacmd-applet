@@ -1,0 +1,9 @@
+{
+  "uuid": "megacmd@yardquit.github.io",
+  "name": "MEGA",
+  "description": "MEGA sync folders, backups, storage and transfers in the top bar, using MEGAcmd.",
+  "shell-version": ["48", "49", "50", "51"],
+  "settings-schema": "org.gnome.shell.extensions.megacmd",
+  "url": "https://github.com/YardQuit/megacmd-applet",
+  "version-name": "0.2.0"
+}

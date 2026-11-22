@@ -1,6 +1,7 @@
 {
   "ok": true,
   "installed": true,
+  "running": true,
   "loggedIn": true,
   "email": "user@example.com",
   "usedBytes": 923589767331,

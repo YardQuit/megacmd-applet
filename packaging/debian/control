@@ -1,0 +1,62 @@
+# control: the Debian source and binary packages of the MEGAcmd applet.
+# SPDX-License-Identifier: GPL-3.0-or-later
+Source: megacmd-applet
+Section: utils
+Priority: optional
+Maintainer: YardQuit <yardquit@pm.me>
+Build-Depends: debhelper-compat (= 13),
+               python3
+Build-Depends-Arch: cargo,
+                    rustc,
+                    pkgconf,
+                    libxkbcommon-dev,
+                    libwayland-dev,
+                    libegl-dev,
+                    libdbus-1-dev,
+                    libudev-dev
+Build-Depends-Indep: libglib2.0-bin
+Standards-Version: 4.7.2
+Homepage: https://github.com/YardQuit/megacmd-applet
+Rules-Requires-Root: no
+
+Package: megacmd-applet
+Architecture: all
+Depends: ${misc:Depends}, python3, gum, procps, xdg-utils
+Recommends: megacmd
+Description: MEGA sync folders, backups, storage and transfers in the panel
+ MEGA in the desktop's panel, driven by MEGAcmd: sync folders, backups,
+ storage and transfers, with a notification once per problem.
+ .
+ This package holds the shared core and the guided dialogs; install the one
+ for your desktop: megacmd-applet-kde, megacmd-applet-gnome or
+ megacmd-applet-cosmic. MEGAcmd comes from MEGA's own repository.
+
+Package: megacmd-applet-kde
+Architecture: all
+Depends: ${misc:Depends}, megacmd-applet (= ${source:Version}), plasma-workspace
+Description: MEGAcmd applet for the KDE Plasma panel
+ MEGA in the desktop's panel, driven by MEGAcmd: sync folders, backups,
+ storage and transfers, with a notification once per problem.
+ .
+ This package holds the Plasma 6 panel widget.
+
+Package: megacmd-applet-gnome
+Architecture: all
+Depends: ${misc:Depends}, megacmd-applet (= ${source:Version}), gnome-shell (>= 48)
+Description: MEGAcmd applet for the GNOME Shell top bar
+ MEGA in the desktop's panel, driven by MEGAcmd: sync folders, backups,
+ storage and transfers, with a notification once per problem.
+ .
+ This package holds the GNOME Shell extension; turn it on in the Extensions
+ app.
+
+Package: megacmd-applet-cosmic
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, megacmd-applet (= ${source:Version})
+Recommends: cosmic-panel
+Description: MEGAcmd applet for the COSMIC panel
+ MEGA in the desktop's panel, driven by MEGAcmd: sync folders, backups,
+ storage and transfers, with a notification once per problem.
+ .
+ This package holds the COSMIC panel applet; add it in Settings, Desktop,
+ Panel, Applets.

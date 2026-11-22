@@ -23,7 +23,8 @@
     "defaults": {
       "refreshIntervalSec": 60,
       "syncFolder": "/",
-      "backupFolder": "/Backups"
+      "backupFolder": "/Backups",
+      "megacmdDir": ""
     },
     "schema": [
       {
@@ -49,6 +50,13 @@
         "label": "MEGA folder for backups",
         "description": "Suggested parent folder in MEGA when adding a backup.",
         "defaultValue": "/Backups"
+      },
+      {
+        "key": "megacmdDir",
+        "type": "string",
+        "label": "MEGAcmd folder",
+        "description": "Folder holding MEGAcmd's mega-* commands, searched before the PATH; empty uses the PATH alone.",
+        "defaultValue": ""
       }
     ]
   }

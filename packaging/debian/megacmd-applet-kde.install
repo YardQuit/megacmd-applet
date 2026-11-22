@@ -1,0 +1,3 @@
+# megacmd-applet-kde.install: the files of the KDE Plasma widget's package.
+# SPDX-License-Identifier: GPL-3.0-or-later
+usr/share/plasma/plasmoids/io.github.yardquit.megacmd

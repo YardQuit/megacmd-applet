@@ -35,12 +35,14 @@ process.stdout.write(JSON.stringify({
 """
 
 # The Font Awesome glyphs of Nerd Fonts the badges show.
-BADGES = {"error": "", "warning": "", "off": "", "stopped": "",
-          "paused": "", "syncing": "", "synced": ""}
+BADGES = {"missing": "\uf12a", "unknown": "\uf128", "error": "\uf12a", "warning": "\uf12a", "off": "\uf00d",
+          "stopped": "\uf00d", "paused": "\uf04c", "syncing": "\uf021", "synced": "\uf00c"}
 
 
 @unittest.skipUnless(shutil.which("node"), "Node is not installed")
 class GlyphTests(unittest.TestCase):
+    """The Omarchy bar's badge glyph for every state."""
+
     def setUp(self):
         done = subprocess.run(["node", "-e", RUNNER, str(ROOT / "omarchy" / "Glyphs.js")],
                               input=json.dumps(list(model.KINDS)), capture_output=True, text=True, check=True)

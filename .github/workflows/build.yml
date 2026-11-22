@@ -1,0 +1,109 @@
+# build.yml: test, build the release files and the Fedora, Ubuntu and Arch
+# packages, and publish them all for a version tag.
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  dist:
+    name: Tests and release files
+    runs-on: ubuntu-24.04
+    container: registry.fedoraproject.org/fedora:45
+    steps:
+      - name: Install the build tools
+        run: >-
+          dnf -y install git cargo gcc make python3 zip tar glib2 pkgconf-pkg-config
+          libxkbcommon-devel wayland-devel mesa-libEGL-devel dbus-devel systemd-devel
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test
+        run: make test
+
+      - name: Build the release files
+        run: make dist
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: |
+            build/dist/*
+            !build/dist/SHA256SUMS
+
+  packages:
+    name: Packages for ${{ matrix.distro }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: fedora
+            image: registry.fedoraproject.org/fedora:45
+            tools: dnf -y -q install git tar
+          - distro: ubuntu
+            image: docker.io/library/ubuntu:26.04
+            tools: apt-get update -qq && apt-get install -y -qq git tar
+          - distro: arch
+            image: docker.io/library/archlinux:latest
+            tools: pacman -Syu --noconfirm --needed git tar
+    steps:
+      - name: Install the tools the checkout needs
+        run: ${{ matrix.tools }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and check the packages
+        run: packaging/build.sh ${{ matrix.distro }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages-${{ matrix.distro }}
+          path: build/packages/${{ matrix.distro }}/*
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [dist, packages]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag against the version
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("manifest.json"))["version"])')"
+          [ "${GITHUB_REF_NAME}" = "v${version}" ] || {
+            echo "Tag ${GITHUB_REF_NAME} does not match version ${version} in manifest.json" >&2
+            exit 1
+          }
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS
+          gh release create "${GITHUB_REF_NAME}" ./* \
+            --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" \
+            --generate-notes --verify-tag

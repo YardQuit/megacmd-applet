@@ -1,13 +1,14 @@
 // ThemePalette.qml: the current Omarchy theme's named colours.
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
-import Quickshell
 import Quickshell.Io
 import qs.Commons
 
 // Reads red, green, yellow, orange and blue from the current theme's
-// colors.toml and follows theme changes. Falls back to the shell's urgent and
-// accent colours when the theme does not define them.
+// colors.toml, which the shell does not expose by name, and reads them again
+// when the file or the shell's colours change, as on a theme switch. Falls
+// back to the shell's urgent and accent colours when the theme does not
+// define them.
 Item {
   id: root
 
@@ -17,6 +18,7 @@ Item {
   property color orange: Color.urgent
   property color blue: Color.accent
 
+  // Takes the named colours from the colors.toml TEXT.
   function apply(text) {
     var values = {}
     var lines = String(text || "").split("\n")
@@ -33,9 +35,17 @@ Item {
   }
 
   FileView {
+    id: colorsFile
     path: Color.currentThemePath + "/colors.toml"
     watchChanges: true
     onFileChanged: reload()
     onLoaded: root.apply(text())
+  }
+
+  Connections {
+    target: Color
+    function onForegroundChanged() { colorsFile.reload() }
+    function onBackgroundChanged() { colorsFile.reload() }
+    function onAccentChanged() { colorsFile.reload() }
   }
 }

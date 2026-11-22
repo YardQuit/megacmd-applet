@@ -13,7 +13,7 @@ repository = "https://github.com/YardQuit/megacmd-applet"
 notify-rust = "4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["process", "rt"] }
+tokio = { version = "1", features = ["process", "rt", "time"] }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic"

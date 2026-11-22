@@ -28,6 +28,6 @@ MouseArea {
         height: width
         anchors.right: cloud.right
         anchors.bottom: cloud.bottom
-        source: root.stateIcons[root.view.kind] || "state-ok"
+        source: root.stateIcons[root.view.kind] || "state-information"
     }
 }

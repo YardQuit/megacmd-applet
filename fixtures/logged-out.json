@@ -1,6 +1,7 @@
 {
   "ok": true,
   "installed": true,
+  "running": true,
   "loggedIn": false,
   "email": "",
   "usedBytes": 0,

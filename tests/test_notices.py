@@ -7,34 +7,38 @@ Run from the repository root with:  python3 -m unittest discover -s tests
 """
 
 import json
-import os
 import pathlib
-import subprocess
-import sys
 import tempfile
 import threading
 import unittest
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "core"))
+from support import ROOT, CheckedTestCase, fenced_env, fixture, run_cli
 
-from megacmd_applet import notices  # noqa: E402
-
-
-def fixture(name):
-    """The saved status in fixtures/NAME."""
-    return json.loads((ROOT / "fixtures" / name).read_text())
+from megacmd_applet import notices
 
 
-class NoticeTests(unittest.TestCase):
+def failing_syncs(count):
+    """The sync-error state with COUNT syncs that stopped for different reasons."""
+    status = fixture("sync-error.json")
+    template = status["syncs"][0]
+    status["syncs"] = [dict(template, id=f"s{i}", error=f"Reason {i}") for i in range(count)]
+    return status
+
+
+class NoticeTests(CheckedTestCase):
+    """Reporting each problem once, across runs and applets."""
+
     def setUp(self):
+        super().setUp()
         self.folder = tempfile.TemporaryDirectory()
         self.state = pathlib.Path(self.folder.name) / "notices.json"
 
     def tearDown(self):
         self.folder.cleanup()
+        super().tearDown()
 
     def take(self, status, **options):
+        """Takes the new notices for STATUS from the test state file."""
         return notices.take_notices(status, self.state, **options)
 
     def test_a_problem_is_reported_once(self):
@@ -75,6 +79,56 @@ class NoticeTests(unittest.TestCase):
         self.state.write_text("not json")
         self.assertEqual(len(self.take(fixture("sync-error.json"))), 1)
 
+    def test_many_problems_of_a_kind_give_one_notice(self):
+        found = self.take(failing_syncs(3))
+        self.assertEqual([n["title"] for n in found], ["MEGA: 3 syncs stopped"])
+        self.assertEqual(self.take(failing_syncs(3)), [])
+        self.assertEqual([n["title"] for n in self.take(failing_syncs(4))], ["MEGA sync stopped"])
+
+    def test_syncs_that_could_not_be_read_keep_what_was_reported(self):
+        self.take(fixture("sync-error.json"))
+        self.assertEqual(self.take(dict(fixture("ok.json"), syncs=[], unread=["syncs"])), [])
+        self.assertEqual(self.take(fixture("sync-error.json")), [])
+
+    def test_storage_that_could_not_be_read_keeps_its_level(self):
+        self.take(fixture("storage-95.json"))
+        self.take(dict(fixture("ok.json"), usagePercent=0.0, totalBytes=0, unread=["storage"]))
+        self.assertEqual(self.take(fixture("storage-95.json")), [])
+
+    def test_storage_without_a_total_is_not_reported(self):
+        self.assertEqual(self.take(dict(fixture("ok.json"), usagePercent=250.0, totalBytes=0)), [])
+
+    def test_storage_beyond_the_range_is_reported_as_full(self):
+        (notice,) = self.take(dict(fixture("ok.json"), usagePercent=250.0))
+        self.assertEqual(notice["title"], "MEGA storage 100% full")
+
+    def test_problems_are_not_repeated_after_an_engine_restart(self):
+        # Syncs and backups cannot be read while the engine is stopped, so
+        # their problems stay recorded rather than being reported again.
+        self.take(fixture("sync-error.json"))
+        self.take(fixture("stopped.json"))
+        self.assertEqual(self.take(fixture("sync-error.json")), [])
+
+    def test_megacmd_missing_reports_nothing(self):
+        self.take(fixture("ok.json"))
+        self.assertEqual(self.take(dict(fixture("logged-out.json"), installed=False)), [])
+
+    def test_a_state_file_with_odd_bytes_or_types_starts_over(self):
+        for text in (b"\xff\xfe{", json.dumps({"reported": 5, "wasRunning": "yes", "storageLevel": "x"}).encode(),
+                     json.dumps({"reported": ["sync:x", 3], "storageLevel": True}).encode()):
+            self.state.write_bytes(text)
+            self.assertEqual(len(self.take(fixture("sync-error.json"))), 1, text)
+
+    def test_a_new_preview_name_starts_afresh(self):
+        self.assertEqual(len(self.take(fixture("sync-error.json"), preview="a")), 1)
+        self.assertEqual(self.take(fixture("sync-error.json"), preview="a"), [])
+        self.assertEqual(len(self.take(fixture("sync-error.json"), preview="b")), 1)
+
+    def test_the_state_file_is_replaced_whole(self):
+        self.take(fixture("sync-error.json"))
+        self.assertEqual(sorted(p.name for p in self.state.parent.iterdir()), ["notices.json", "notices.json.lock"])
+        self.assertEqual(json.loads(self.state.read_text())["reported"], ["sync:sync001:Local path not found"])
+
     def test_the_state_file_is_private(self):
         self.take(fixture("ok.json"))
         self.assertEqual(self.state.stat().st_mode & 0o777, 0o600)
@@ -95,16 +149,26 @@ class NoticeTests(unittest.TestCase):
         self.assertEqual(len(found), 1)
 
 
-class PreviewTests(unittest.TestCase):
+class PreviewTests(CheckedTestCase):
+    """Keeping the notices of previews apart from the live ones."""
+
     def test_a_preview_keeps_its_notices_apart_from_the_live_ones(self):
-        with tempfile.TemporaryDirectory() as state, tempfile.TemporaryDirectory() as runtime:
-            env = {**os.environ, "XDG_STATE_HOME": state, "XDG_RUNTIME_DIR": runtime}
-            command = [sys.executable, "-I", str(ROOT / "bin" / "megacmd-applet"), "status",
-                       "--fixture", str(ROOT / "fixtures" / "sync-error.json")]
-            shown = json.loads(subprocess.run(command, env=env, capture_output=True, text=True, check=True).stdout)
+        with tempfile.TemporaryDirectory() as base:
+            env = fenced_env(base)
+            done = run_cli("status", "--fixture", str(ROOT / "fixtures" / "sync-error.json"), env=env)
+            shown = json.loads(done.stdout)
             self.assertEqual(len(shown["notices"]), 1)
-            self.assertTrue((pathlib.Path(runtime) / "megacmd-applet" / "preview.json").exists())
-            self.assertFalse((pathlib.Path(state) / "megacmd-applet").exists())
+            self.assertTrue((pathlib.Path(env["XDG_RUNTIME_DIR"]) / "megacmd-applet" / "preview.json").exists())
+            self.assertFalse((pathlib.Path(env["XDG_STATE_HOME"]) / "megacmd-applet").exists())
+
+    def test_an_unreadable_state_takes_no_notices(self):
+        with tempfile.TemporaryDirectory() as base:
+            env = fenced_env(base)
+            saved = pathlib.Path(base) / "busy.json"
+            saved.write_text(json.dumps({"ok": False, "error": "MEGAcmd is busy"}))
+            shown = json.loads(run_cli("status", "--fixture", str(saved), env=env).stdout)
+            self.assertEqual((shown["kind"], shown["notices"]), ("unknown", []))
+            self.assertFalse((pathlib.Path(env["XDG_RUNTIME_DIR"]) / "megacmd-applet").exists())
 
 
 if __name__ == "__main__":

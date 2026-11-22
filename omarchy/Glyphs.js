@@ -13,10 +13,11 @@ var NOTICE = { error: ICON_ERROR, off: ICON_OFF, cloud: ICON_CLOUD }
 
 // Small badge drawn on the cloud for a state the shared core names.
 function badgeGlyph(kind) {
-  if (kind === "error" || kind === "warning") return "\uf12a"
+  if (kind === "error" || kind === "warning" || kind === "missing") return "\uf12a"
   if (kind === "off" || kind === "stopped") return "\uf00d"
   if (kind === "paused") return "\uf04c"
   if (kind === "syncing") return "\uf021"
+  if (kind === "unknown") return "\uf128"
   return "\uf00c"
 }
 

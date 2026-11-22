@@ -6,22 +6,13 @@ the problems worth a notification, and the texts every applet shows.
 Run from the repository root with:  python3 -m unittest discover -s tests
 """
 
-import json
-import pathlib
-import sys
 import unittest
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "core"))
+from support import CheckedTestCase, fixture
 
-from megacmd_applet import model, view  # noqa: E402
+from megacmd_applet import model, view
 
 HOME = "/home/user"
-
-
-def fixture(name):
-    """The saved status in fixtures/NAME."""
-    return json.loads((ROOT / "fixtures" / name).read_text())
 
 
 def local_paths(status):
@@ -30,8 +21,11 @@ def local_paths(status):
     return paths + ["~" + path[len(HOME):] for path in paths if path.startswith(HOME + "/")]
 
 
-class ProblemTests(unittest.TestCase):
+class ProblemTests(CheckedTestCase):
+    """Finding the problems to notify about."""
+
     def assert_no_local_path(self, found, status):
+        """Fails if any problem in FOUND names a local folder of STATUS."""
         for problem in found:
             for path in local_paths(status):
                 self.assertNotIn(path, problem["title"])
@@ -57,7 +51,9 @@ class ProblemTests(unittest.TestCase):
         self.assertEqual(model.problems(fixture("ok.json")), [])
 
 
-class StateTests(unittest.TestCase):
+class StateTests(CheckedTestCase):
+    """Working out the overall state."""
+
     def test_all_paused_with_storage_nearly_full_can_still_be_resumed(self):
         status = fixture("storage-95.json")
         for sync in status["syncs"]:
@@ -86,13 +82,78 @@ class StateTests(unittest.TestCase):
         self.assertEqual(model.overall_kind(status), "stopped")
         self.assertEqual(model.OVERALL_TEXT["stopped"], "MEGAcmd is not running")
 
+    def test_megacmd_missing_or_unreadable_has_its_own_state(self):
+        self.assertEqual(model.overall_kind(dict(fixture("ok.json"), installed=False)), "missing")
+        self.assertEqual(model.overall_kind(dict(fixture("ok.json"), ok=False)), "unknown")
+        self.assertEqual(model.overall_kind(dict(fixture("ok.json"), syncs=[], unread=["syncs"])), "unknown")
+
+    def test_every_state_has_a_text_and_a_colour(self):
+        for kind in model.KINDS:
+            self.assertTrue(model.OVERALL_TEXT[kind] and model.BADGE_COLOUR[kind], kind)
+
+    def test_the_paused_run_state_counts_as_paused(self):
+        self.assertTrue(model.sync_paused({"runState": "Paused"}))
+        self.assertEqual(model.sync_kind({"runState": "Paused", "status": "Synced"}), "paused")
+
+    def test_numbers_that_are_not_finite_are_zero(self):
+        for value in ("nan", "inf", float("inf"), "-inf", None, "x"):
+            self.assertEqual(model.number(value), 0.0, value)
+
     def test_byte_counts_round_as_javascript_did(self):
         self.assertEqual(model.format_bytes(0), "0 B")
         self.assertEqual(model.format_bytes(1536), "1.50 KB")
         self.assertEqual(model.format_bytes(2759989952000), "2.51 TB")
 
 
-class ViewTests(unittest.TestCase):
+class StorageTests(CheckedTestCase):
+    """The storage line and warning level."""
+
+    def test_storage_beyond_the_range_is_clamped(self):
+        status = dict(fixture("ok.json"), usagePercent=250.0)
+        self.assertEqual(model.storage_percent(status), 100.0)
+        self.assertTrue(model.usage_text(status).endswith("(100%)"))
+        self.assertEqual(model.storage_percent(dict(status, usagePercent=-5)), 0.0)
+
+    def test_storage_without_a_total_has_no_line_and_no_warning(self):
+        status = dict(fixture("ok.json"), usagePercent=97.0, totalBytes=0)
+        self.assertEqual((model.usage_text(status), model.storage_percent(status)), ("", 0.0))
+        self.assertEqual(model.overall_kind(status), "synced")
+
+
+class PeriodTests(CheckedTestCase):
+    """Backup schedules in words."""
+
+    def test_cron_lines(self):
+        for period, text in (("0 0 2 * * *", "Daily at 02:00 UTC"), ("0 30 4 * * 1", "Weekly on Monday at 04:30 UTC"),
+                             ("0 0 3 * * 7", "Weekly on Sunday at 03:00 UTC"),
+                             ("0 0 3 * * sat", "Weekly on Saturday at 03:00 UTC"),
+                             ("15 30 4 * * *", "Daily at 04:30:15 UTC"), ("0 5 * * * *", "Hourly at :05")):
+            self.assertEqual(model.period_text(period), text, period)
+
+    def test_cron_lines_that_are_not_simple_stay_as_they_are(self):
+        for period in ("0 0 * * * 1", "0 0 0 15 * *", "0 0 */2 * * *", "0 0 2 * * 1-5", "0 0 25 * * *"):
+            self.assertEqual(model.period_text(period), period)
+
+    def test_times_use_megacmds_units(self):
+        for period, text in (("1d", "Every day"), ("6h", "Every 6 hours"), ("1m", "Every month"),
+                             ("30M", "Every 30 minutes"), ("1m12d3h", "Every 1 month, 12 days, 3 hours"),
+                             ("weird", "weird")):
+            self.assertEqual(model.period_text(period), text, period)
+
+
+class OfferTests(CheckedTestCase):
+    """What an applet offers when nobody is logged in."""
+
+    def test_each_state_offers_what_helps(self):
+        for status, offer in ((fixture("stopped.json"), "start"), (fixture("logged-out.json"), "login"),
+                              (fixture("ok.json"), ""), (dict(fixture("logged-out.json"), installed=False), ""),
+                              (dict(fixture("logged-out.json"), ok=False), "")):
+            self.assertEqual(model.offer(status), offer)
+
+
+class ViewTests(CheckedTestCase):
+    """Building the view the desktops draw."""
+
     def test_view_carries_meaning_and_texts_for_every_row(self):
         shown = view.build_view(fixture("sync-error.json"), HOME)
         self.assertEqual((shown["kind"], shown["kindText"], shown["badgeColour"]),
@@ -108,6 +169,31 @@ class ViewTests(unittest.TestCase):
         shown = view.build_view(fixture("backup-failed.json"), HOME)
         self.assertTrue(any(b["failed"] for b in shown["backups"]))
         self.assertTrue(all(b["meta"] for b in shown["backups"]))
+
+    def test_rows_have_titles_and_backup_rows_their_state(self):
+        shown = view.build_view(fixture("backup-failed.json"), HOME)
+        self.assertEqual(shown["syncs"][0]["title"], "~/Documents ↔ /Sync/Documents")
+        self.assertEqual(shown["backups"][0]["title"], "~/Pictures → /Backups")
+        self.assertEqual((shown["backups"][0]["kind"], shown["backups"][0]["badgeColour"]), ("error", "red"))
+        ok = view.build_view(fixture("ok.json"), HOME)["backups"][0]
+        self.assertEqual((ok["kind"], ok["badgeColour"]), ("synced", "green"))
+        pending = view.backup_row(dict(fixture("ok.json")["backups"][0], lastStatus=""), HOME)
+        self.assertEqual((pending["kind"], pending["badgeColour"]), ("pending", ""))
+
+    def test_an_unreadable_state_shows_why_and_offers_nothing(self):
+        shown = view.build_view({"ok": False, "error": "MEGAcmd is busy", "loggedIn": True}, HOME)
+        self.assertEqual((shown["kind"], shown["kindText"], shown["error"]), ("unknown", "MEGAcmd is busy",
+                                                                             "MEGAcmd is busy"))
+        self.assertEqual((shown["loggedIn"], shown["offer"], shown["offerText"], shown["badgeColour"]),
+                         (False, "", "", "orange"))
+        self.assertEqual((shown["syncs"], shown["usageText"]), ([], ""))
+
+    def test_offers_come_with_their_text_and_hint(self):
+        shown = view.build_view(fixture("stopped.json"), HOME)
+        self.assertEqual((shown["offer"], shown["offerText"]), ("start", "Start MEGAcmd"))
+        self.assertTrue(shown["offerHint"])
+        shown = view.build_view(fixture("logged-out.json"), HOME)
+        self.assertEqual((shown["offer"], shown["offerText"]), ("login", "Log in to MEGA"))
 
     def test_view_keeps_the_notices_it_is_given(self):
         notice = {"title": "t", "body": "b", "urgency": "normal", "icon": "cloud"}

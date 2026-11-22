@@ -1,8 +1,22 @@
-# guided.sh: shared steps for the MEGA widget's guided terminal dialogs.
+# guided.sh: shared steps for the MEGA applet's guided terminal dialogs.
 # SPDX-License-Identifier: GPL-3.0-or-later
 # shellcheck shell=bash
 #
-# Sourced by mega-add-sync and mega-add-backup. Needs gum and MEGAcmd.
+# Sourced by mega-account-login, mega-add-sync, mega-add-backup and
+# mega-edit-backup. Needs gum and MEGAcmd; stops at once when gum is missing.
+#
+# The choose_* helpers print their answer, so they run in $(...); a cancel
+# or a wrong answer makes them exit non-zero, and the caller must stop then:
+#   folder=$(choose_local_folder "...") || exit 1
+
+if ! command -v gum >/dev/null 2>&1; then
+  echo "gum is not installed; install it to use the MEGA dialogs." >&2
+  exit 1
+fi
+
+# A MEGAcmd backup period: a time such as "1m12d3h" (m months, M minutes)
+# or a cron line with seconds.
+PERIOD_PATTERN='^([0-9]+[ymdhMs])+$|^([0-9A-Za-z*,/?-]+ ){5}[0-9A-Za-z*,/?-]+$'
 
 # Prints a message and exits with status 1.
 die() {
@@ -19,18 +33,19 @@ require_login() {
 choose_local_folder() {
   local header=$1 picked
   picked=$(cd "$HOME" && gum file --directory --height=15 --header="$header (Enter selects, ← goes up)" "$HOME") || exit 1
+  [[ -n $picked ]] || exit 1
   [[ -f $picked ]] && picked=$(dirname "$picked")
   [[ -d $picked ]] || die "Not a folder: $picked"
   realpath "$picked"
 }
 
-# Asks for a MEGA folder path, suggesting $1; prints the path without a trailing slash.
+# Asks for a MEGA folder path, suggesting $2; prints it absolute, without trailing slashes.
 choose_remote_folder() {
   local header=$1 suggestion=$2 picked
   picked=$(gum input --header="$header" --value="$suggestion" --placeholder="/path/in/MEGA" --char-limit=0) || exit 1
-  picked=${picked%/}
   [[ $picked == /* ]] || picked="/$picked"
-  printf '%s\n' "${picked:-/}"
+  while [[ $picked == */ && $picked != / ]]; do picked=${picked%/}; done
+  printf '%s\n' "$picked"
 }
 
 # Creates the MEGA folder $1 (and its parents) when it does not exist yet.
@@ -43,19 +58,24 @@ ensure_remote_folder() {
 }
 
 # Lets the user pick a backup schedule; prints MEGAcmd's period string. The
-# current period $1, if any, is offered first.
+# current period $1, if any, is offered first. Cron times are UTC.
 choose_period() {
-  local current=${1:-} choice
-  local options=("Daily at 02:00" "Every 6 hours" "Weekly, Sunday at 03:00" "Other…")
+  local current=${1:-} choice period
+  local options=("Daily at 02:00 UTC" "Every 6 hours" "Weekly, Sunday at 03:00 UTC" "Other…")
   [[ -n $current ]] && options=("Keep current ($current)" "${options[@]}")
   choice=$(gum choose --header="When to back up" "${options[@]}") || exit 1
   case $choice in
-    "Keep current"*) printf '%s\n' "$current" ;;
-    "Daily at 02:00") printf '%s\n' "0 0 2 * * *" ;;
-    "Every 6 hours") printf '%s\n' "6h" ;;
-    "Weekly, Sunday at 03:00") printf '%s\n' "0 0 3 * * 0" ;;
-    *) gum input --header="Period: e.g. 1d, 12h, or a cron line with seconds (\"0 30 1 * * *\")" --value="$current" --char-limit=0 || exit 1 ;;
+    "Keep current"*) period=$current ;;
+    "Daily at 02:00 UTC") period="0 0 2 * * *" ;;
+    "Every 6 hours") period="6h" ;;
+    "Weekly, Sunday at 03:00 UTC") period="0 0 3 * * 0" ;;
+    "Other…")
+      period=$(gum input --header="Period: e.g. 1d, 12h, or a cron line with seconds in UTC (\"0 30 1 * * *\")" \
+        --value="$current" --char-limit=0) || exit 1 ;;
+    *) exit 1 ;;
   esac
+  [[ $period =~ $PERIOD_PATTERN ]] || die "Not a backup period: $period"
+  printf '%s\n' "$period"
 }
 
 # Asks how many backups to keep, suggesting $1; prints a positive number.

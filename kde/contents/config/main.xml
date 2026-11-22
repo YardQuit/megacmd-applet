@@ -20,6 +20,10 @@
       <label>Suggested parent folder in MEGA when adding a backup.</label>
       <default>/Backups</default>
     </entry>
+    <entry name="megacmdDir" type="String">
+      <label>Folder holding MEGAcmd's mega-* commands, searched before the PATH; empty uses the PATH alone.</label>
+      <default></default>
+    </entry>
     <entry name="terminal" type="String">
       <label>Command that runs a program in a terminal, for the guided dialogs; empty finds one.</label>
       <default></default>

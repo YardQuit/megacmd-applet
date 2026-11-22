@@ -14,8 +14,8 @@ tag=${1:-}
 [[ $tag =~ ^[0-9]+$ ]] || die "Usage: mega-edit-backup TAG [CURRENT_PERIOD] [CURRENT_KEEP]"
 require_login
 
-period=$(choose_period "${2:-}")
-keep=$(choose_keep "${3:-14}")
+period=$(choose_period "${2:-}") || exit 1
+keep=$(choose_keep "${3:-14}") || exit 1
 
 gum confirm "Back up with period \"$period\", keeping $keep?" || exit 1
 mega-backup "$tag" --period="$period" --num-backups="$keep" || die "MEGAcmd could not change the backup."

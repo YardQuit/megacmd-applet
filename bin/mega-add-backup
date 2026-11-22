@@ -14,11 +14,11 @@ source "$(dirname "$(realpath "$0")")/guided.sh"
 parent=${1:-/Backups}
 require_login
 
-local_folder=$(choose_local_folder "Local folder to back up")
-remote_folder=$(choose_remote_folder "MEGA folder to keep the backups of $local_folder in" "$parent")
+local_folder=$(choose_local_folder "Local folder to back up") || exit 1
+remote_folder=$(choose_remote_folder "MEGA folder to keep the backups of $local_folder in" "$parent") || exit 1
 
-period=$(choose_period)
-keep=$(choose_keep 14)
+period=$(choose_period) || exit 1
+keep=$(choose_keep 14) || exit 1
 
 gum confirm "Back up $local_folder to $remote_folder (period \"$period\", keeping $keep)?" || exit 1
 ensure_remote_folder "$remote_folder"

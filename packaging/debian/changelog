@@ -1,0 +1,5 @@
+megacmd-applet (0.2.0-1) unstable; urgency=medium
+
+  * Packages for the shared core and the KDE, GNOME and COSMIC applets.
+
+ -- YardQuit <yardquit@pm.me>  Sun, 22 Nov 2026 12:00:00 +0000

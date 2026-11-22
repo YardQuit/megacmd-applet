@@ -1,0 +1,8 @@
+# megacmd-applet-omarchy.install: tells how to add the plugin to the Omarchy bar.
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+post_install() {
+    echo "Omarchy loads plugins from each user's own folder. To add MEGA to your bar:"
+    echo "  ln -s /usr/share/megacmd-applet ~/.config/omarchy/plugins/yardquit.mega"
+    echo "  omarchy plugin enable yardquit.mega"
+}

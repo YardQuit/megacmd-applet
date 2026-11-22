@@ -1,0 +1,40 @@
+#!/usr/bin/make -f
+# rules: build the Debian packages of the MEGAcmd applet.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The COSMIC applet is built from the crates in the source's crates/ folder
+# (the orig-crates component, made by make crates), without the network. The
+# packages for every architecture need no Rust: their build and install only
+# copy the core and the KDE and GNOME parts.
+
+%:
+	dh $@
+
+override_dh_auto_build-arch:
+	$(MAKE) cosmic
+
+override_dh_auto_build-indep:
+
+override_dh_auto_test-arch:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	$(MAKE) test-cosmic
+endif
+
+override_dh_auto_test-indep:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	$(MAKE) test-core
+endif
+
+override_dh_auto_install-arch:
+	$(MAKE) install-cosmic DESTDIR=$(CURDIR)/debian/tmp PREFIX=/usr
+
+override_dh_auto_install-indep:
+	$(MAKE) install-core install-kde install-gnome DESTDIR=$(CURDIR)/debian/tmp PREFIX=/usr
+
+# Each user turns the MEGAcmd engine's unit on for themselves.
+override_dh_installsystemduser:
+	dh_installsystemduser --no-enable
+
+# The crates' licence texts stay readable where debian/copyright names them.
+override_dh_compress:
+	dh_compress -X THIRD-PARTY-LICENCES

@@ -6,12 +6,13 @@ import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
 
 // Refresh interval, the MEGA folders suggested for new syncs and backups,
-// and the terminal the guided dialogs open in.
+// the terminal the guided dialogs open in and MEGAcmd's folder.
 KCM.SimpleKCM {
     property alias cfg_refreshIntervalSec: refreshInterval.value
     property alias cfg_syncFolder: syncFolder.text
     property alias cfg_backupFolder: backupFolder.text
     property alias cfg_terminal: terminal.text
+    property alias cfg_megacmdDir: megacmdDir.text
 
     Kirigami.FormLayout {
         QQC2.SpinBox {
@@ -33,6 +34,11 @@ KCM.SimpleKCM {
             id: terminal
             Kirigami.FormData.label: i18n("Terminal command:")
             placeholderText: i18n("Found automatically, e.g. konsole -e")
+        }
+        QQC2.TextField {
+            id: megacmdDir
+            Kirigami.FormData.label: i18n("MEGAcmd folder:")
+            placeholderText: i18n("Found on the PATH")
         }
     }
 }

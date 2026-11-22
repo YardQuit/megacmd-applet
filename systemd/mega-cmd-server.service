@@ -1,13 +1,15 @@
 # mega-cmd-server.service: run the MEGAcmd engine from login.
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Install: cp mega-cmd-server.service ~/.config/systemd/user/
-#          systemctl --user enable --now mega-cmd-server.service
+# Installed by make install-core and the core package; each user turns it on
+# for themselves with
+#   systemctl --user enable --now mega-cmd-server.service
+# For a mega-cmd-server outside /usr/bin and /usr/local/bin, give its path in
+# an override made with systemctl --user edit mega-cmd-server.service: an
+# empty "ExecStart=" line, then "ExecStart=/path/to/mega-cmd-server".
 
 [Unit]
 Description=MEGAcmd sync and backup engine
-Wants=network-online.target
-After=network-online.target
 
 [Service]
 ExecStart=mega-cmd-server

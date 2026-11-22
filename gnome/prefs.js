@@ -5,7 +5,7 @@ import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
 import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-/** Settings: refresh interval, suggested MEGA folders and the terminal command. */
+/** Settings: refresh interval, suggested MEGA folders, the terminal command and MEGAcmd's folder. */
 export default class MegaPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
@@ -23,6 +23,7 @@ export default class MegaPreferences extends ExtensionPreferences {
             ['sync-folder', _('MEGA folder for new syncs')],
             ['backup-folder', _('MEGA folder for backups')],
             ['terminal', _('Terminal command (empty finds one)')],
+            ['megacmd-dir', _('MEGAcmd folder (empty uses the PATH)')],
         ]) {
             const row = new Adw.EntryRow({title});
             settings.bind(key, row, 'text', Gio.SettingsBindFlags.DEFAULT);

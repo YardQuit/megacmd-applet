@@ -24,6 +24,11 @@
       <summary>Terminal command</summary>
       <description>Command that runs a program in a terminal, for the guided dialogs; empty finds one.</description>
     </key>
+    <key name="megacmd-dir" type="s">
+      <default>""</default>
+      <summary>MEGAcmd folder</summary>
+      <description>Folder holding MEGAcmd's mega-* commands, searched before the PATH; empty uses the PATH alone.</description>
+    </key>
     <key name="preview-name" type="s">
       <default>""</default>
       <summary>Preview</summary>

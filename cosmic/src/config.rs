@@ -17,6 +17,9 @@ pub struct Config {
     pub backup_folder: String,
     /// Command that runs a program in a terminal; empty lets the core find one.
     pub terminal: String,
+    /// Folder holding MEGAcmd's mega-* commands, searched before the PATH;
+    /// empty uses the PATH alone.
+    pub megacmd_dir: String,
     /// Folder of the shared core (holding bin/megacmd-applet); empty finds it
     /// under the data folders.
     pub core_dir: String,
@@ -31,6 +34,7 @@ impl Default for Config {
             sync_folder: "/".into(),
             backup_folder: "/Backups".into(),
             terminal: String::new(),
+            megacmd_dir: String::new(),
             core_dir: String::new(),
             preview_name: String::new(),
         }

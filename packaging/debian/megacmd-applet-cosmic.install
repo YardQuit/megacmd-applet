@@ -1,0 +1,6 @@
+# megacmd-applet-cosmic.install: the files of the COSMIC panel applet's package.
+# SPDX-License-Identifier: GPL-3.0-or-later
+usr/bin/cosmic-applet-megacmd
+usr/share/applications/io.github.yardquit.MegaCmd.desktop
+usr/share/icons/hicolor/scalable/apps
+usr/share/licenses/megacmd-applet-cosmic/THIRD-PARTY-LICENCES usr/share/doc/megacmd-applet-cosmic

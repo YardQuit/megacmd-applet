@@ -1,4 +1,7 @@
+# .gitignore: files git leaves out: build output, unpacked crates, Python caches and the project notes.
+# SPDX-License-Identifier: GPL-3.0-or-later
 __pycache__/
 .project/
 build/
 target/
+/crates/

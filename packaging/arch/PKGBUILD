@@ -1,0 +1,88 @@
+# PKGBUILD: Arch Linux packages of the MEGAcmd applet.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Built from a source archive of the checkout, megacmd-applet-<version>.tar.gz
+# beside this file (packaging/build.sh makes it).
+
+pkgbase=megacmd-applet
+pkgname=(megacmd-applet megacmd-applet-omarchy megacmd-applet-kde megacmd-applet-gnome megacmd-applet-cosmic)
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="MEGA sync folders, backups, storage and transfers in the desktop's panel"
+arch=(x86_64)
+url="https://github.com/YardQuit/megacmd-applet"
+license=(GPL-3.0-or-later)
+makedepends=(cargo python glib2 libxkbcommon wayland libglvnd dbus systemd-libs)
+checkdepends=(python)
+source=("$pkgbase-$pkgver.tar.gz")
+sha256sums=('SKIP')
+# The applet is built without debug symbols, so there is nothing for a debug package.
+options=(!debug)
+
+# The crates are fetched once, here; building and testing then run offline.
+prepare() {
+    cd "$pkgbase-$pkgver"
+    cargo fetch --locked --target "$(rustc --print host-tuple)" --manifest-path cosmic/Cargo.toml
+}
+
+build() {
+    cd "$pkgbase-$pkgver"
+    CARGO_NET_OFFLINE=true make cosmic
+}
+
+check() {
+    cd "$pkgbase-$pkgver"
+    CARGO_NET_OFFLINE=true make test
+}
+
+package_megacmd-applet() {
+    pkgdesc+=" (shared core and guided dialogs)"
+    arch=(any)
+    depends=(python gum procps-ng xdg-utils)
+    optdepends=("megacmd: the MEGA engine, from MEGA's own repository")
+    cd "$pkgbase-$pkgver"
+    make install-core DESTDIR="$pkgdir" PREFIX=/usr
+}
+
+package_megacmd-applet-omarchy() {
+    pkgdesc+=" (Omarchy bar plugin)"
+    arch=(any)
+    depends=("megacmd-applet=$pkgver-$pkgrel")
+    install=megacmd-applet-omarchy.install
+    cd "$pkgbase-$pkgver"
+    make install-omarchy DESTDIR="$pkgdir" PREFIX=/usr
+}
+
+package_megacmd-applet-kde() {
+    pkgdesc+=" (KDE Plasma widget)"
+    arch=(any)
+    depends=("megacmd-applet=$pkgver-$pkgrel" plasma-workspace)
+    cd "$pkgbase-$pkgver"
+    make install-kde DESTDIR="$pkgdir" PREFIX=/usr
+}
+
+package_megacmd-applet-gnome() {
+    pkgdesc+=" (GNOME Shell extension)"
+    arch=(any)
+    depends=("megacmd-applet=$pkgver-$pkgrel" "gnome-shell>=1:48")
+    cd "$pkgbase-$pkgver"
+    make install-gnome DESTDIR="$pkgdir" PREFIX=/usr
+}
+
+package_megacmd-applet-cosmic() {
+    pkgdesc+=" (COSMIC panel applet)"
+    # The applet and the crates linked into it, as scripts/third-party-licences.py
+    # --summary lists them, with those of the crates that state none: MPL-2.0
+    # (libcosmic), GPL-3.0-only (cosmic-panel), MIT (window_clipboard) and
+    # Unlicense (apply).
+    license=(GPL-3.0-or-later GPL-3.0-only MPL-2.0 MIT Apache-2.0 BSD-2-Clause BSD-3-Clause CC0-1.0
+             ISC Unicode-3.0 Unlicense Zlib
+             '0BSD OR Apache-2.0 OR MIT' 'Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT'
+             'Apache-2.0 OR BSD-2-Clause OR MIT' 'Apache-2.0 OR BSD-3-Clause'
+             'Apache-2.0 OR GPL-2.0-only' 'Apache-2.0 OR MIT OR Zlib' 'Apache-2.0 OR MIT'
+             'LGPL-3.0-or-later OR MIT' 'MIT OR Unlicense')
+    depends=("megacmd-applet=$pkgver-$pkgrel" gcc-libs glibc libxkbcommon wayland dbus systemd-libs)
+    optdepends=("cosmic-panel: the panel the applet runs in")
+    cd "$pkgbase-$pkgver"
+    make install-cosmic DESTDIR="$pkgdir" PREFIX=/usr
+}

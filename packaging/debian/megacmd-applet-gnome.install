@@ -1,0 +1,3 @@
+# megacmd-applet-gnome.install: the files of the GNOME Shell extension's package.
+# SPDX-License-Identifier: GPL-3.0-or-later
+usr/share/gnome-shell/extensions/megacmd@yardquit.github.io

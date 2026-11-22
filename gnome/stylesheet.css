@@ -1,19 +1,26 @@
 /* stylesheet.css: badge colours and row layout of the MEGA extension. */
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+.megacmd-menu {
+  max-width: 30em;
+}
+
+.megacmd-heading {
+  font-weight: bold;
+}
+
 .megacmd-badge {
   icon-size: 8px;
 }
 
 .megacmd-red { color: #e01b24; }
 .megacmd-orange { color: #ff7800; }
-.megacmd-yellow { color: #f6d32d; }
+.megacmd-yellow { color: #e5a50a; }
 .megacmd-blue { color: #3584e4; }
-.megacmd-green { color: #33d17a; }
+.megacmd-green { color: #2ec27e; }
 
 .megacmd-meta {
   font-size: smaller;
-  color: rgba(255, 255, 255, 0.6);
 }
 
 .megacmd-row-button {
@@ -21,10 +28,15 @@
   border-radius: 99px;
 }
 
-.megacmd-row-button:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+.megacmd-row-button:hover,
+.megacmd-row-button:focus {
+  background-color: rgba(128, 128, 128, 0.25);
+}
+
+.megacmd-button-box {
+  spacing: 4px;
 }
 
 .megacmd-warning-text {
-  color: #ff7800;
+  color: #e66100;
 }

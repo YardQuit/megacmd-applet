@@ -14,8 +14,9 @@ source "$(dirname "$(realpath "$0")")/guided.sh"
 parent=${1:-/}
 require_login
 
-local_folder=$(choose_local_folder "Local folder to sync")
-remote_folder=$(choose_remote_folder "MEGA folder to keep in sync with $local_folder" "$(remote_join "$parent" "$(basename "$local_folder")")")
+local_folder=$(choose_local_folder "Local folder to sync") || exit 1
+remote_folder=$(choose_remote_folder "MEGA folder to keep in sync with $local_folder" \
+  "$(remote_join "$parent" "$(basename "$local_folder")")") || exit 1
 
 gum confirm "Sync $local_folder with $remote_folder in MEGA?" || exit 1
 ensure_remote_folder "$remote_folder"

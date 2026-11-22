@@ -7,11 +7,11 @@ import org.kde.kirigami as Kirigami
 
 // A status icon, the folder pair and its second line, and buttons for the
 // row's main action (`toggle`), opening its local folder and removing it.
-// Removing asks twice: the first click arms the button for a few seconds.
+// `remove` is signalled on every press of the remove button; `armed` shows
+// that button asking for confirmation.
 RowLayout {
     id: row
 
-    property string itemKey: ""
     property string iconName: ""
     property string title: ""
     property string meta: ""
@@ -25,9 +25,6 @@ RowLayout {
 
     spacing: Kirigami.Units.smallSpacing
 
-    // A different item in this row (the list changed) is not armed.
-    onItemKeyChanged: armed = false
-
     Kirigami.Icon {
         source: row.iconName
         Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
@@ -39,11 +36,13 @@ RowLayout {
         Layout.fillWidth: true
         PlasmaComponents3.Label {
             text: row.title
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             elide: Text.ElideMiddle
         }
         PlasmaComponents3.Label {
             text: row.meta
+            textFormat: Text.PlainText
             opacity: 0.7
             font: Kirigami.Theme.smallFont
             Layout.fillWidth: true
@@ -70,22 +69,8 @@ RowLayout {
         icon.name: row.armed ? "dialog-ok-apply" : "edit-delete"
         display: row.armed ? PlasmaComponents3.AbstractButton.TextBesideIcon : PlasmaComponents3.AbstractButton.IconOnly
         text: row.armed ? i18n("Remove?") : i18n("Remove (files stay)")
-        onClicked: {
-            if (row.armed) {
-                row.armed = false
-                row.remove()
-            } else {
-                row.armed = true
-                disarm.restart()
-            }
-        }
+        onClicked: row.remove()
         PlasmaComponents3.ToolTip.text: text
         PlasmaComponents3.ToolTip.visible: hovered
-    }
-
-    Timer {
-        id: disarm
-        interval: 4000
-        onTriggered: row.armed = false
     }
 }

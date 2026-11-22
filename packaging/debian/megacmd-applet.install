@@ -1,0 +1,4 @@
+# megacmd-applet.install: the files of the core package.
+# SPDX-License-Identifier: GPL-3.0-or-later
+usr/share/megacmd-applet
+usr/lib/systemd/user/mega-cmd-server.service

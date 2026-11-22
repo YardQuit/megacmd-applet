@@ -8,12 +8,13 @@ import org.kde.kirigami as Kirigami
 
 // The overall state with a switch that pauses or resumes all syncing, the
 // account's storage and transfers, the sync folders and backups with their
-// buttons, and the actions to add more. When logged out it offers to log in
-// (or to start MEGAcmd).
+// buttons, and the actions to add more. Otherwise the state and, when the
+// core offers one, a button that logs in or starts MEGAcmd.
 PlasmaExtras.Representation {
     id: full
 
     Layout.minimumWidth: Kirigami.Units.gridUnit * 24
+    Layout.preferredWidth: Kirigami.Units.gridUnit * 24
     Layout.minimumHeight: Kirigami.Units.gridUnit * 26
     collapseMarginsHint: true
 
@@ -22,7 +23,7 @@ PlasmaExtras.Representation {
             anchors.fill: parent
 
             Kirigami.Icon {
-                source: root.stateIcons[root.view.kind] || "state-ok"
+                source: root.stateIcons[root.view.kind] || "state-information"
                 Layout.preferredWidth: Kirigami.Units.iconSizes.medium
                 Layout.preferredHeight: Kirigami.Units.iconSizes.medium
             }
@@ -34,17 +35,22 @@ PlasmaExtras.Representation {
                     text: i18n("MEGA")
                 }
                 PlasmaComponents3.Label {
-                    text: root.view.installed === false ? i18n("MEGAcmd is not installed") : (root.view.kindText || "")
+                    text: root.view.kindText || ""
+                    textFormat: Text.PlainText
                     opacity: 0.7
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                 }
             }
             PlasmaComponents3.Switch {
-                visible: root.loggedIn && root.view.syncs.length > 0
+                visible: root.showAccount && root.view.syncs.length > 0
                 checked: root.view.anyRunning === true
                 text: i18n("Syncing")
-                onToggled: root.toggleAll()
+                onToggled: {
+                    root.toggleAll()
+                    // Pressing the switch replaces the binding; the core's state decides.
+                    checked = Qt.binding(() => root.view.anyRunning === true)
+                }
             }
             PlasmaComponents3.ToolButton {
                 icon.name: "view-refresh"
@@ -61,6 +67,7 @@ PlasmaExtras.Representation {
         id: scroll
         anchors.fill: parent
         PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
+        contentWidth: availableWidth
 
         ColumnLayout {
             id: content
@@ -69,54 +76,64 @@ PlasmaExtras.Representation {
             spacing: Kirigami.Units.smallSpacing
 
             PlasmaExtras.PlaceholderMessage {
-                visible: !root.loggedIn
+                visible: !root.showAccount && root.view.offer !== ""
                 Layout.fillWidth: true
-                iconName: "state-offline"
-                text: root.view.running === false ? i18n("MEGAcmd is not running") : i18n("Not logged in")
-                explanation: root.view.running === false
-                             ? i18n("Starts the engine in a terminal; logs in too if needed.")
-                             : i18n("Opens a terminal for your email, password and 2FA code.")
+                iconName: root.stateIcons[root.view.kind] || "state-information"
+                text: root.view.offerText || ""
+                explanation: root.view.offerHint || ""
                 helpfulAction: Kirigami.Action {
                     icon.name: "network-connect"
-                    text: root.view.running === false ? i18n("Start MEGAcmd") : i18n("Log in to MEGA")
+                    text: root.view.offerText || ""
                     onTriggered: root.login()
                 }
             }
+            // The state in full when there is nothing to offer, e.g. why it
+            // could not be read.
+            PlasmaComponents3.Label {
+                visible: !root.showAccount && root.view.offer === "" && text !== ""
+                text: root.view.kindText || ""
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
 
             PlasmaComponents3.Label {
-                visible: root.loggedIn
+                visible: root.showAccount
                 text: root.view.email || ""
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 elide: Text.ElideRight
             }
             PlasmaComponents3.Label {
-                visible: root.loggedIn && text !== ""
+                visible: root.showAccount && text !== ""
                 text: root.view.usageText ? i18n("Stored: %1", root.view.usageText) : ""
-                color: root.view.storageLevel > 0 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                textFormat: Text.PlainText
+                color: root.view.storageLevel > 0 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
                 Layout.fillWidth: true
             }
             PlasmaComponents3.Label {
-                visible: root.loggedIn && text !== ""
+                visible: root.showAccount && text !== ""
                 text: root.view.transfersText || ""
+                textFormat: Text.PlainText
                 opacity: 0.7
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
 
             Kirigami.Heading {
-                visible: root.loggedIn
+                visible: root.showAccount
                 level: 4
                 text: i18n("Sync folders")
                 Layout.topMargin: Kirigami.Units.largeSpacing
             }
             Repeater {
-                model: root.loggedIn ? root.view.syncs : []
+                model: root.showAccount ? root.view.syncs : []
                 ItemRow {
                     required property var modelData
                     Layout.fillWidth: true
-                    itemKey: modelData.key
-                    iconName: root.stateIcons[modelData.kind] || "state-ok"
-                    title: modelData.localDisplay + "  ↔  " + modelData.remote
+                    armed: modelData.key === root.armedKey
+                    iconName: root.stateIcons[modelData.kind] || "state-information"
+                    title: modelData.title
                     meta: modelData.meta
                     toggleIcon: modelData.paused ? "media-playback-start" : "media-playback-pause"
                     toggleText: modelData.paused ? i18n("Resume") : i18n("Pause")
@@ -126,26 +143,26 @@ PlasmaExtras.Representation {
                 }
             }
             PlasmaComponents3.Button {
-                visible: root.loggedIn
+                visible: root.showAccount
                 icon.name: "list-add"
                 text: i18n("Add sync…")
                 onClicked: root.addSync()
             }
 
             Kirigami.Heading {
-                visible: root.loggedIn
+                visible: root.showAccount
                 level: 4
                 text: i18n("Backups")
                 Layout.topMargin: Kirigami.Units.largeSpacing
             }
             Repeater {
-                model: root.loggedIn ? root.view.backups : []
+                model: root.showAccount ? root.view.backups : []
                 ItemRow {
                     required property var modelData
                     Layout.fillWidth: true
-                    itemKey: modelData.key
-                    iconName: modelData.failed ? "state-error" : (modelData.lastStatus ? "state-ok" : "backup")
-                    title: modelData.localDisplay + "  →  " + modelData.remote
+                    armed: modelData.key === root.armedKey
+                    iconName: root.stateIcons[modelData.kind] || "backup"
+                    title: modelData.title
                     meta: modelData.meta
                     toggleIcon: "configure"
                     toggleText: i18n("Change schedule and versions")
@@ -155,14 +172,14 @@ PlasmaExtras.Representation {
                 }
             }
             PlasmaComponents3.Button {
-                visible: root.loggedIn
+                visible: root.showAccount
                 icon.name: "list-add"
                 text: i18n("Add backup…")
                 onClicked: root.addBackup()
             }
 
             PlasmaComponents3.Button {
-                visible: root.loggedIn
+                visible: root.showAccount
                 icon.name: "internet-services"
                 text: i18n("Open MEGA in the browser")
                 onClicked: root.openWeb()
@@ -171,8 +188,9 @@ PlasmaExtras.Representation {
 
             PlasmaComponents3.Label {
                 visible: text !== ""
-                text: root.actionStatus !== "" ? root.actionStatus : root.lastError
-                color: Kirigami.Theme.negativeTextColor
+                text: root.actionStatus !== "" ? root.actionStatus : (root.view.ok === true ? root.view.error || "" : "")
+                textFormat: Text.PlainText
+                color: Kirigami.Theme.neutralTextColor
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }

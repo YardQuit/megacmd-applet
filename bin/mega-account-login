@@ -6,6 +6,7 @@
 # a command line or the shell history.
 
 set -uo pipefail
+source "$(dirname "$(realpath "$0")")/guided.sh"
 
 if account=$(mega-whoami 2>/dev/null); then
   echo "Already logged in: $(sed -n 's/^Account e-mail: *//p' <<<"$account")"

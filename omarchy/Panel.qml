@@ -3,23 +3,22 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Quickshell
-import Quickshell.Io
 import qs.Commons
-import qs.Commons as Commons
 import qs.Ui
 import "Glyphs.js" as Glyphs
 
 // Bar icon showing MEGAcmd's overall state, and a keyboard-navigable panel to
-// pause, resume, add and remove syncs and backups. Enter runs a row's main
-// action; "o" opens its folder, "s" opens a backup's settings, "x" twice
-// removes it, "r" refreshes.
+// pause, resume, add and remove syncs and backups. Left click opens the
+// panel, right click pauses or resumes all syncing, middle click refreshes.
+// In the panel, Enter or Space runs a row's main action; "o" opens its
+// folder, "s" opens a backup's settings, Delete or "x" twice removes it, "p"
+// pauses or resumes all syncing, "r" refreshes.
 //
 // Every bar's panel shows the one shared state of the plugin's service
 // (Service.qml), which the shell loads once.
 //
-// IPC target "yardquit.mega": open, close, toggle, refresh, status, and
-// preview NAME / live to show a saved state from fixtures/.
+// IPC target "yardquit.mega": open, close, show, hide, toggle, refresh,
+// status, and preview NAME / live to show a saved state from fixtures/.
 Panel {
   id: root
   moduleName: "yardquit.mega"
@@ -33,8 +32,11 @@ Panel {
   // The plugin's service, or `offline` until the shell has loaded it.
   property var mega: offline
 
-  readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
-  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
+  // The panel's scrolling area, null until the panel first opens.
+  readonly property Item panelFlick: panel.loadedContent ? panel.loadedContent.panelFlick : null
+
+  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string kind: mega.kind
@@ -43,26 +45,29 @@ Panel {
     red: themeColors.red, orange: themeColors.orange, yellow: themeColors.yellow,
     blue: themeColors.blue, green: themeColors.green
   })
-  readonly property color badgeColor: stateColors[mega.badgeColour]
-  readonly property color panelBackground: Commons.Color.background
+  readonly property color badgeColor: stateColors[mega.badgeColour] || foreground
+  readonly property color panelBackground: Color.popups.background
 
-  // Keyboard targets in display order: "header", "sync:N", "addSync",
-  // "backup:N", "addBackup", "web", or "login" when logged out.
+  // Keyboard targets in display order: "header" (while there are syncs to
+  // pause), "sync:N", "addSync", "backup:N", "addBackup", "web"; or "login"
+  // when the view offers to log in or start MEGAcmd.
   readonly property var targets: {
-    if (!mega.loggedIn) return ["login"]
-    var list = ["header"]
+    if (!mega.ready) return mega.offer !== "" ? ["login"] : []
+    var list = mega.syncs.length > 0 ? ["header"] : []
     for (var i = 0; i < mega.syncs.length; i++) list.push("sync:" + i)
     list.push("addSync")
     for (var j = 0; j < mega.backups.length; j++) list.push("backup:" + j)
     list.push("addBackup", "web")
     return list
   }
-  readonly property string cursorTarget: targets[Math.max(0, Math.min(cursorIndex, targets.length - 1))]
+  readonly property string cursorTarget: targets.length > 0 ? targets[Math.max(0, Math.min(cursorIndex, targets.length - 1))] : ""
 
+  // True when the keyboard cursor is on TARGET.
   function hasCursor(target) {
     return cursorActive && cursorTarget === target
   }
 
+  // Puts the keyboard cursor on TARGET, as when the mouse enters its row.
   function setCursor(target) {
     var index = targets.indexOf(target)
     if (index < 0) return
@@ -70,12 +75,39 @@ Panel {
     cursorIndex = index
   }
 
+  // Moves the keyboard cursor DY rows and scrolls its row into view.
   function moveCursor(dy) {
     cursorActive = true
     cursorIndex = Math.max(0, Math.min(targets.length - 1, cursorIndex + dy))
-    pendingRemove = ""
+    scrollItemIntoView(rowFor(cursorTarget, panelFlick ? panelFlick.contentItem : null))
   }
 
+  // The visible row under ITEM whose target is TARGET, or null.
+  function rowFor(target, item) {
+    if (!item || !item.visible) return null
+    if (item.target === target) return item
+    for (var i = 0; i < item.children.length; i++) {
+      var found = rowFor(target, item.children[i])
+      if (found) return found
+    }
+    return null
+  }
+
+  // Scrolls the panel so that ITEM is fully shown.
+  function scrollItemIntoView(item) {
+    if (!panelFlick || !item) return
+    Qt.callLater(function() {
+      if (!item || !panelFlick) return
+      var margin = Style.space(6)
+      var top = item.mapToItem(panelFlick.contentItem, 0, 0).y
+      var bottom = top + item.height
+      var maxY = Math.max(0, panelFlick.contentHeight - panelFlick.height)
+      if (top < panelFlick.contentY + margin) panelFlick.contentY = Math.max(0, top - margin)
+      else if (bottom > panelFlick.contentY + panelFlick.height - margin) panelFlick.contentY = Math.min(maxY, bottom + margin - panelFlick.height)
+    })
+  }
+
+  // The sync or backup TARGET names, or null for other rows.
   function itemFor(target) {
     var parts = String(target).split(":")
     if (parts[0] === "sync") return mega.syncs[Number(parts[1])]
@@ -83,6 +115,7 @@ Panel {
     return null
   }
 
+  // Runs the main action of the row TARGET names.
   function activate(target) {
     var parts = String(target).split(":")
     if (target === "login") mega.login()
@@ -99,16 +132,16 @@ Panel {
     if (String(target).indexOf("backup:") === 0) mega.editBackup(itemFor(target))
   }
 
+  // Opens the local folder of the sync or backup TARGET names.
   function openTarget(target) {
     var item = itemFor(target)
     if (item) mega.openFolder(item.local)
   }
 
   // Removing asks twice: the first request arms it, the second removes. The
-  // sync or backup is armed by its ID, so a list that changed between the two
-  // requests arms the row's new item instead of removing it.
+  // sync or backup is armed by its key, so a list that changed between the
+  // two requests arms the row's new item instead of removing it.
   function requestRemove(target) {
-    var kind = String(target).split(":")[0]
     var item = itemFor(target)
     var key = item ? item.key : ""
     if (key === "") return
@@ -118,7 +151,8 @@ Panel {
       return
     }
     pendingRemove = ""
-    if (kind === "sync") mega.removeSync(item)
+    removeDisarm.stop()
+    if (String(target).indexOf("sync:") === 0) mega.removeSync(item)
     else mega.removeBackup(item)
   }
 
@@ -126,20 +160,21 @@ Panel {
   implicitHeight: button.implicitHeight
 
   onOpenedChanged: {
+    if (opened && mega === offline) findService()
     mega.setPanelOpen(root, opened)
     if (!opened) return
     cursorActive = false
     cursorIndex = 0
     pendingRemove = ""
     if (panelFlick) panelFlick.contentY = 0
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
   }
-  onSettingsChanged: mega.settings = settings
+  onSettingsChanged: mega.configure(settings)
   Component.onCompleted: findService()
   Component.onDestruction: mega.setPanelOpen(root, false)
 
   // Looks up the plugin's service and hands it this widget's settings; until
-  // the shell has loaded it, `serviceRetry` keeps looking.
+  // the shell has loaded it, `serviceRetry` keeps looking, less and less often.
   function findService() {
     var service = bar && bar.shell ? bar.shell.serviceFor("yardquit.mega") : null
     if (!service) {
@@ -148,7 +183,7 @@ Panel {
     }
     serviceRetry.stop()
     mega = service
-    mega.settings = settings
+    mega.configure(settings)
     if (opened) mega.setPanelOpen(root, true)
   }
 
@@ -156,29 +191,34 @@ Panel {
     id: serviceRetry
     interval: 1000
     repeat: true
-    onTriggered: root.findService()
+    onTriggered: {
+      interval = Math.min(interval * 2, 60000)
+      root.findService()
+    }
   }
 
   // Stands in for the service until it is loaded: shows that, and does nothing.
   QtObject {
     id: offline
-    property var settings: ({})
-    readonly property bool installed: true
-    readonly property bool running: true
-    readonly property bool loggedIn: false
+    readonly property bool ready: false
     readonly property string email: ""
     readonly property var syncs: []
     readonly property var backups: []
     readonly property string usageText: ""
     readonly property int storageLevel: 0
     readonly property string transfersText: ""
-    readonly property string lastError: "MEGA service not loaded"
+    readonly property bool ok: false
+    readonly property string error: ""
     readonly property string actionStatus: ""
-    readonly property string kind: "off"
-    readonly property string kindText: "Not logged in"
+    readonly property string kind: "unknown"
+    readonly property string kindText: "MEGA service not loaded"
     readonly property string badgeColour: "orange"
+    readonly property string offer: ""
+    readonly property string offerText: ""
+    readonly property string offerHint: ""
     readonly property bool anyRunning: false
     readonly property bool busy: false
+    function configure(settings) {}
     function setPanelOpen(panel, open) {}
     function refresh() {}
     function preview(name) {}
@@ -194,7 +234,7 @@ Panel {
     function openWeb() {}
   }
 
-  IpcHandler {
+  ShellIpc {
     target: root.ipcTarget
     function open(): void { root.open() }
     function close(): void { root.close() }
@@ -222,7 +262,7 @@ Panel {
     // The cloud is the button's own glyph, so the bar sizes it like its other
     // icons; the badge sits on top and takes no part in that sizing.
     text: Glyphs.ICON_CLOUD
-    tooltipText: mega.loggedIn ? "MEGA: " + mega.kindText : "MEGA: not logged in"
+    tooltipText: mega.kindText !== "" ? "MEGA: " + mega.kindText : "MEGA"
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) mega.toggleAll()
       else if (buttonCode === Qt.MiddleButton) mega.refresh()
@@ -237,7 +277,7 @@ Panel {
     visible: button.glyphPaintedWidth > 0
     kind: root.kind
     badgeColor: root.badgeColor
-    ringColor: root.bar ? root.bar.background : Commons.Color.background
+    ringColor: root.bar ? root.bar.background : Color.bar.background
     fontFamily: root.fontFamily
   }
 
@@ -247,12 +287,13 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
+    focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(420))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(620))
+    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight, Style.space(620))
 
-    PanelKeyCatcher {
-      id: keyCatcher
+    content: PanelKeyCatcher {
+      property alias panelFlick: panelFlick
+      implicitHeight: column.implicitHeight
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
@@ -261,11 +302,12 @@ Panel {
       onActivateRequested: if (root.cursorActive) root.activate(root.cursorTarget)
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      onTextKey: function(t) {
+      onDeleteRequested: if (root.cursorActive) root.requestRemove(root.cursorTarget)
+      onTextKey: function(t, modifiers) {
+        if (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
         if (t === "r" || t === "R") mega.refresh()
         else if (t === "o" || t === "O") root.openTarget(root.cursorTarget)
         else if (t === "s" || t === "S") root.editTarget(root.cursorTarget)
-        else if (t === "x" || t === "X") root.requestRemove(root.cursorTarget)
         else if (t === "p" || t === "P") mega.toggleAll()
       }
 
@@ -289,14 +331,15 @@ Panel {
             id: header
             width: parent.width
             implicitHeight: hero.implicitHeight
+            readonly property string target: "header"
             readonly property bool ringVisible: root.hasCursor("header")
 
             PanelHero {
               id: hero
               width: parent.width
               title: "MEGA"
-              meta: mega.installed ? mega.kindText : "MEGAcmd is not installed"
-              detail: mega.email
+              meta: mega.kindText
+              detail: mega.ready ? mega.email : ""
               foreground: root.foreground
               fontFamily: root.fontFamily
               iconComponent: Component {
@@ -312,7 +355,7 @@ Panel {
               trailingControl: Component {
                 ToggleSwitch {
                   id: syncSwitch
-                  visible: mega.loggedIn && mega.syncs.length > 0
+                  visible: mega.ready && mega.syncs.length > 0
                   checked: mega.anyRunning
                   busy: mega.busy
                   hasCursor: header.ringVisible
@@ -330,29 +373,31 @@ Panel {
             }
           }
 
+          // The panel's header shows the state upper-cased and cut short, so
+          // an unreadable state's reason is repeated here in full.
           Text {
+            readonly property string note: mega.actionStatus !== "" ? mega.actionStatus : mega.error
             textFormat: Text.PlainText
-            visible: mega.actionStatus !== "" || mega.lastError !== ""
+            visible: note !== ""
             width: parent.width
-            text: mega.actionStatus !== "" ? mega.actionStatus : mega.lastError
+            text: note
             color: root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
+            wrapMode: Text.Wrap
           }
 
           ActionRow {
-            visible: !mega.loggedIn
+            visible: !mega.ready && mega.offer !== ""
             width: parent.width
             target: "login"
             glyph: "󰌆"
-            title: mega.running ? "Log in to MEGA" : "Start MEGAcmd"
-            meta: mega.running ? "Opens a terminal for your email, password and 2FA code"
-                               : "Starts the engine in a terminal; logs in too if needed"
+            title: mega.offerText
+            meta: mega.offerHint
           }
 
           Column {
-            visible: mega.loggedIn
+            visible: mega.ready
             width: parent.width
             spacing: Style.spacing.labelGap
 
@@ -374,10 +419,10 @@ Panel {
             }
           }
 
-          PanelSeparator { visible: mega.loggedIn; foreground: root.foreground }
+          PanelSeparator { visible: mega.ready; foreground: root.foreground }
 
           Column {
-            visible: mega.loggedIn
+            visible: mega.ready
             width: parent.width
             spacing: Style.space(6)
 
@@ -393,7 +438,7 @@ Panel {
                 itemKey: modelData.key
                 iconKind: modelData.kind
                 iconColour: modelData.badgeColour
-                title: modelData.localDisplay + "  ↔  " + modelData.remote
+                title: modelData.title
                 meta: modelData.meta
                 toggleGlyph: modelData.paused ? "󰐊" : "󰏤"
                 toggleTip: modelData.paused ? "Resume" : "Pause"
@@ -409,10 +454,10 @@ Panel {
             }
           }
 
-          PanelSeparator { visible: mega.loggedIn; foreground: root.foreground }
+          PanelSeparator { visible: mega.ready; foreground: root.foreground }
 
           Column {
-            visible: mega.loggedIn
+            visible: mega.ready
             width: parent.width
             spacing: Style.space(6)
 
@@ -427,8 +472,8 @@ Panel {
                 target: "backup:" + index
                 itemKey: modelData.key
                 glyph: Glyphs.ICON_BACKUP
-                glyphColor: modelData.failed ? root.stateColors.red : (modelData.lastStatus ? root.stateColors.green : root.foreground)
-                title: modelData.localDisplay + "  →  " + modelData.remote
+                glyphColor: root.stateColors[modelData.badgeColour] || root.foreground
+                title: modelData.title
                 meta: modelData.meta
                 toggleGlyph: ""
               }
@@ -443,10 +488,10 @@ Panel {
             }
           }
 
-          PanelSeparator { visible: mega.loggedIn; foreground: root.foreground }
+          PanelSeparator { visible: mega.ready; foreground: root.foreground }
 
           ActionRow {
-            visible: mega.loggedIn
+            visible: mega.ready
             width: parent.width
             target: "web"
             glyph: "󰖟"
@@ -509,7 +554,7 @@ Panel {
     property string target: ""
     property string itemKey: ""
     property string iconKind: ""
-    property string iconColour: "green"
+    property string iconColour: ""
     property string glyph: ""
     property color glyphColor: root.foreground
     property string title: ""
@@ -541,7 +586,7 @@ Panel {
         size: Style.font.icon
         kind: itemRow.iconKind
         color: root.foreground
-        badgeColor: root.stateColors[itemRow.iconColour]
+        badgeColor: root.stateColors[itemRow.iconColour] || root.foreground
         ringColor: root.panelBackground
         fontFamily: root.fontFamily
         Layout.alignment: Qt.AlignVCenter

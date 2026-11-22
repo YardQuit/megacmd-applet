@@ -1,3 +1,5 @@
+# io.github.yardquit.MegaCmd.desktop: registers the MEGA applet with the COSMIC panel.
+# SPDX-License-Identifier: GPL-3.0-or-later
 [Desktop Entry]
 Name=MEGA
 Comment=MEGA sync folders, backups, storage and transfers, using MEGAcmd

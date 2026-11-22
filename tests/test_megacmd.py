@@ -7,21 +7,21 @@ Run from the repository root with:  python3 -m unittest discover -s tests
 """
 
 import json
+import os
 import pathlib
-import subprocess
-import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-CLI = ROOT / "bin" / "megacmd-applet"
-sys.path.insert(0, str(ROOT / "core"))
+from support import ROOT, CheckedTestCase, FakeMegaCmd, fenced_env, run_cli, write_script
 
-from megacmd_applet import megacmd as status  # noqa: E402
+from megacmd_applet import megacmd as status
 
 
-class StorageTests(unittest.TestCase):
+class StorageTests(CheckedTestCase):
+    """Reading the storage use from mega-df."""
+
     def test_used_bytes_come_from_percentage_and_total(self):
         text = ("Cloud drive:          1234...56789 in  10 file(s) and   2 folder(s)\n"
                 "USED STORAGE:         1099...11776                  50.00% of 2199023255552\n")
@@ -30,13 +30,22 @@ class StorageTests(unittest.TestCase):
     def test_missing_storage_line_gives_zeroes(self):
         self.assertEqual(status.parse_storage("Not logged in."), (0, 0, 0.0))
 
+    def test_an_exact_used_count_is_taken_as_it_is(self):
+        text = "USED STORAGE:         1099511627777                  50.00% of 2199023255552\n"
+        self.assertEqual(status.parse_storage(text)[0], 1099511627777)
+
+    def test_a_bare_dot_for_the_percentage_does_not_break_the_status(self):
+        self.assertEqual(status.parse_storage("USED STORAGE: 12 .% of 100\n"), (0, 0, 0.0))
+
 
 def sync_table(*rows):
     """MEGAcmd's sync table with the given rows, in the columns megacmd.py asks for."""
     return "\n".join(status.SEPARATOR.join(row) for row in [status.SYNC_COLUMNS, *rows]) + "\n"
 
 
-class SyncTests(unittest.TestCase):
+class SyncTests(CheckedTestCase):
+    """Reading the sync table from mega-sync."""
+
     TEXT = sync_table(
         ["abc", "/home/user/My Notes", "/Sync/My Notes", "Running", "Synced", "NO", "1.50 MB", "12", "3"],
         ["d-f_9", "/home/user/Code", "/Sync/Code", "Disabled", "NONE", "Local path not found", "0.00   B", "0", "0"])
@@ -88,7 +97,9 @@ class SyncTests(unittest.TestCase):
         self.assertEqual((syncs[0]["files"], syncs[0]["dirs"]), (0, 0))
 
 
-class BackupTests(unittest.TestCase):
+class BackupTests(CheckedTestCase):
+    """Reading the backup list from mega-backup."""
+
     DETAILS = (
         "TAG   LOCALPATH                         REMOTEPARENTPATH            STATUS\n"
         "42    /home/user/Family Photos          /Backups                    ACTIVE\n"
@@ -134,7 +145,9 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(status.parse_backups(details), [])
 
 
-class TransferTests(unittest.TestCase):
+class TransferTests(CheckedTestCase):
+    """Reading the transfer summary from mega-transfers."""
+
     def test_summary_is_read(self):
         text = ("   NUM DOWNLOADS  DOWNLOADED       TOTAL    %             NUM UPLOADS    UPLOADED       TOTAL    %   \n"
                 "             120     1.20 GB     4.80 GB  25.00%                    3   10.00 MB    20.00 MB  50.00%\n")
@@ -144,23 +157,46 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(transfers["downloadPercent"], 25.0)
         self.assertEqual((transfers["uploads"], transfers["uploadPercent"]), (3, 50.0))
 
+    def test_counts_that_are_not_finite_numbers_give_zero(self):
+        text = ("   NUM DOWNLOADS  DOWNLOADED       TOTAL    %             NUM UPLOADS    UPLOADED       TOTAL    %   \n"
+                "             nan     1.20 GB     4.80 GB  inf%                    inf   10.00 MB    20.00 MB  50.00%\n")
+        transfers = status.parse_transfers(text)
+        self.assertEqual((transfers["downloads"], transfers["downloadPercent"], transfers["uploads"]), (0, 0.0, 0))
+
     def test_no_transfers(self):
         transfers = status.parse_transfers("No transfers.")
         self.assertEqual((transfers["downloads"], transfers["uploads"]), (0, 0))
 
 
-class EngineTests(unittest.TestCase):
+def collect_with(running=True, **answers):
+    """Collects the state with MEGAcmd installed and RUNNING; returns it and the commands run.
+
+    ANSWERS maps a command name with "_" for "-" (mega_whoami) to its
+    (exit status, output); other commands answer (0, "").
+    """
+    calls = []
+
+    def fake_run(args, timeout):
+        calls.append(args[0])
+        return answers.get(args[0].replace("-", "_"), (0, ""))
+
+    with mock.patch.object(status.shutil, "which", return_value="/usr/bin/mega-whoami"), \
+         mock.patch.object(status, "engine_running", return_value=running), \
+         mock.patch.object(status, "run", side_effect=fake_run):
+        data = status.collect()
+    return data, calls
+
+
+LOGGED_IN = (0, "Account e-mail: user@example.com\n")
+STORAGE = (0, "USED STORAGE:         1099511627776                  50.00% of 2199023255552\n")
+
+
+class EngineTests(CheckedTestCase):
+    """Telling a stopped MEGAcmd engine from a running one."""
+
     def collect(self, running):
         """Collects the state with MEGAcmd installed; returns it and the commands run."""
-        calls = []
-        def fake_run(args, timeout):
-            calls.append(args[0])
-            return 0, ""
-        with mock.patch.object(status.shutil, "which", return_value="/usr/bin/mega-whoami"), \
-             mock.patch.object(status, "engine_running", return_value=running), \
-             mock.patch.object(status, "run", side_effect=fake_run):
-            data = status.collect()
-        return data, calls
+        return collect_with(running)
 
     def test_a_stopped_engine_is_reported_and_not_started(self):
         # Every mega-* client starts the engine when it is not running, so
@@ -176,13 +212,80 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(calls[0], "mega-whoami")
 
 
+class UnreadableStateTests(CheckedTestCase):
+    """A MEGAcmd that is busy or failing is not taken for logged out or for having nothing."""
+
+    def test_a_busy_whoami_makes_the_state_unreadable(self):
+        data, calls = collect_with(mega_whoami=(status.TIMED_OUT, ""))
+        self.assertEqual((data["ok"], data["error"]), (False, "MEGAcmd is busy"))
+        self.assertEqual(calls, ["mega-whoami"])
+
+    def test_a_failing_whoami_makes_the_state_unreadable(self):
+        data, _ = collect_with(mega_whoami=(1, "[API:err: 10:00:00] Internal error"))
+        self.assertFalse(data["ok"])
+        self.assertIn("Internal error", data["error"])
+
+    def test_not_logged_in_is_read_as_logged_out(self):
+        data, calls = collect_with(mega_whoami=(57, "[API:err: 10:00:00] Not logged in."))
+        self.assertEqual((data["ok"], data["loggedIn"]), (True, False))
+        self.assertEqual(calls, ["mega-whoami"])
+
+    def test_parts_that_fail_are_named_and_noted(self):
+        data, _ = collect_with(mega_whoami=LOGGED_IN, mega_df=STORAGE, mega_sync=(status.TIMED_OUT, ""),
+                               mega_backup=(1, "[API:err: 10:00:00] Busy"))
+        self.assertTrue(data["ok"] and data["loggedIn"])
+        self.assertEqual(data["unread"], ["syncs", "backups"])
+        self.assertEqual(data["error"], "Could not read the syncs and backups from MEGAcmd.")
+        self.assertEqual(data["totalBytes"], 2199023255552)
+
+    def test_storage_without_a_total_is_unread(self):
+        data, _ = collect_with(mega_whoami=LOGGED_IN, mega_df=(0, "something else"))
+        self.assertEqual(data["unread"], ["storage"])
+
+    def test_a_plain_message_with_a_failing_status_still_counts_as_an_answer(self):
+        data, _ = collect_with(mega_whoami=LOGGED_IN, mega_df=STORAGE, mega_backup=(1, "No backup configured."))
+        self.assertEqual((data["unread"], data["backups"], data["error"]), ([], [], ""))
+
+
+class RunTests(CheckedTestCase):
+    """Running a command: timeouts, odd output and missing commands."""
+
+    def setUp(self):
+        super().setUp()
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.dir = pathlib.Path(folder.name)
+
+    def test_a_timeout_kills_the_whole_process_group(self):
+        # The background sleep keeps the output pipe open; killing only the
+        # shell would leave the run waiting for it.
+        script = write_script(self.dir / "slow", "#!/bin/sh\nsleep 8 &\necho $! > \"$0.pid\"\nsleep 8\n")
+        start = time.monotonic()
+        self.assertEqual(status.run([str(script)], 0.5), (status.TIMED_OUT, ""))
+        self.assertLess(time.monotonic() - start, 4)
+        pid = int((self.dir / "slow.pid").read_text())
+        stat = pathlib.Path(f"/proc/{pid}/stat")
+        self.assertTrue(not stat.exists() or stat.read_text().split()[2] == "Z", "the background child still runs")
+
+    def test_output_that_is_not_utf8_is_decoded_with_replacements(self):
+        script = write_script(self.dir / "odd", "#!/bin/sh\nprintf 'a\\377b'\n")
+        self.assertEqual(status.run([str(script)], 5), (0, "a\ufffdb"))
+
+    def test_a_missing_command_is_reported_not_raised(self):
+        self.assertEqual(status.run([str(self.dir / "missing")], 5), (status.NOT_FOUND, ""))
+
+
 def cli_status(path):
-    """Runs `megacmd-applet status --fixture PATH --no-notices`; returns the finished process."""
-    return subprocess.run([sys.executable, "-I", str(CLI), "status", "--fixture", str(path), "--no-notices"],
-                          capture_output=True, text=True, check=True)
+    """Runs `megacmd-applet status --fixture PATH --no-notices` in a fenced environment; returns the process."""
+    with tempfile.TemporaryDirectory() as base:
+        done = run_cli("status", "--fixture", str(path), "--no-notices", env=fenced_env(base))
+    done.check_returncode()
+    return done
 
 
-class FixtureTests(unittest.TestCase):
+class FixtureTests(CheckedTestCase):
+    """The saved states in fixtures/ read and turn into views."""
+
     def test_every_fixture_keeps_its_fields_in_the_view(self):
         for path in sorted((ROOT / "fixtures").glob("*.json")):
             with self.subTest(fixture=path.name):
@@ -202,6 +305,72 @@ class FixtureTests(unittest.TestCase):
             shown = json.loads(cli_status(handle.name).stdout)
         self.assertFalse(shown["ok"])
         self.assertIn("not a JSON object", shown["error"])
+        self.assertEqual((shown["kind"], shown["kindText"]), ("unknown", shown["error"]))
+
+    def test_every_fixture_says_whether_megacmd_runs(self):
+        for path in sorted((ROOT / "fixtures").glob("*.json")):
+            self.assertIn("running", json.loads(path.read_text()), path.name)
+
+
+class StatusCommandTests(CheckedTestCase):
+    """`status` always prints a whole view."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake = FakeMegaCmd()
+        self.addCleanup(self.fake.close)
+
+    def status(self, *args):
+        """Runs `status ARGS` against the stand-ins; returns the view after checking the exit status is 0."""
+        done = self.fake.run_cli(*args)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_a_bad_megacmd_folder_gives_an_unreadable_view(self):
+        shown = self.status("--megacmd-dir=relative", "status")
+        self.assertEqual((shown["ok"], shown["kind"], shown["loggedIn"], shown["offer"]),
+                         (False, "unknown", False, ""))
+        self.assertEqual(shown["kindText"], "Not a folder: relative")
+
+    def test_a_busy_megacmd_gives_an_unreadable_view_and_no_notices(self):
+        self.fake.set("mega-whoami", "", 0, sleep=5)
+        shown = self.status("status", "--timeout", "0.3")
+        self.assertEqual((shown["ok"], shown["kind"], shown["kindText"]), (False, "unknown", "MEGAcmd is busy"))
+        self.assertEqual(shown["notices"], [])
+        self.assertFalse((pathlib.Path(self.fake.env["XDG_STATE_HOME"]) / "megacmd-applet").exists())
+
+    def test_megacmd_not_installed_offers_nothing(self):
+        env = dict(self.fake.env, PATH=os.pathsep.join(p for p in self.fake.env["PATH"].split(os.pathsep)
+                                                      if not (pathlib.Path(p) / "mega-whoami").exists()))
+        shown = json.loads(run_cli("status", env=env).stdout)
+        self.assertEqual((shown["kind"], shown["badgeColour"], shown["offer"]), ("missing", "orange", ""))
+
+    def test_a_preview_shows_a_saved_state_for_the_preview_home(self):
+        shown = self.status("status", "--preview", "sync-error")
+        self.assertEqual(shown["kind"], "error")
+        self.assertTrue(all(row["localDisplay"].startswith("~/") for row in shown["syncs"]))
+        self.assertEqual(len(shown["notices"]), 1)
+        self.assertTrue((pathlib.Path(self.fake.env["XDG_RUNTIME_DIR"]) / "megacmd-applet" / "preview.json").exists())
+        self.assertEqual(self.fake.calls(), [])
+
+    def test_a_preview_ignores_the_megacmd_folder(self):
+        shown = self.status("--megacmd-dir=relative", "status", "--preview", "ok")
+        self.assertEqual((shown["ok"], shown["kind"]), (True, "synced"))
+
+    def test_a_bad_or_unknown_preview_name_gives_an_unreadable_view(self):
+        for name in ("no-such-state", "../fixtures/ok", "ok.json", ""):
+            shown = self.status("status", "--preview", name)
+            self.assertEqual((shown["ok"], shown["kind"]), (False, "unknown"), name)
+            self.assertEqual(shown["error"], f"No saved state named {name}")
+
+    def test_an_unwritable_state_file_is_a_note_not_a_failure(self):
+        # A folder under a regular file cannot be made, even by root.
+        blocker = pathlib.Path(self.fake.base) / "blocker"
+        blocker.write_text("")
+        shown = self.status("status", "--fixture", str(ROOT / "fixtures" / "sync-error.json"),
+                            "--state", str(blocker / "sub" / "notices.json"))
+        self.assertEqual(shown["notices"], [])
+        self.assertIn("Could not keep the notification state", shown["error"])
 
 
 if __name__ == "__main__":

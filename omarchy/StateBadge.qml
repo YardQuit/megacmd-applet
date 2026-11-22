@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
 import qs.Commons
-import "Model.js" as Model
+import "Glyphs.js" as Glyphs
 
-// Draws the glyph for `kind` (see Model.badgeGlyph) in `badgeColor` on a disc
+// Draws the glyph for `kind` (see Glyphs.badgeGlyph) in `badgeColor` on a disc
 // of `ringColor` (usually the background behind the icon), which separates it
 // from the icon it sits on. Set `width`; the badge is round.
 Rectangle {
@@ -23,7 +23,7 @@ Rectangle {
     anchors.centerIn: parent
     textFormat: Text.PlainText
     renderType: Text.NativeRendering
-    text: Model.badgeGlyph(root.kind)
+    text: Glyphs.badgeGlyph(root.kind)
     color: root.badgeColor
     font.family: root.fontFamily
     font.pixelSize: Math.round(root.width * 0.8)

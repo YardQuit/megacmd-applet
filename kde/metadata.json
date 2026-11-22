@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "YardQuit"
+            }
+        ],
+        "Category": "File System",
+        "Description": "MEGA sync folders, backups, storage and transfers, using MEGAcmd.",
+        "Icon": "cloudstatus",
+        "Id": "io.github.yardquit.megacmd",
+        "License": "GPL-3.0-or-later",
+        "Name": "MEGA",
+        "Version": "0.2.0",
+        "Website": "https://github.com/YardQuit/megacmd-applet"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

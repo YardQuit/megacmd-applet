@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
 import qs.Commons
-import "Model.js" as Model
+import "Glyphs.js" as Glyphs
 
 // Draws the cloud in `color`, scaled to fill a `size` square, with the badge
-// for `kind` (see Model.badgeGlyph) in its lower-right corner in `badgeColor`.
+// for `kind` (see Glyphs.badgeGlyph) in its lower-right corner in `badgeColor`.
 // `ringColor` (usually the bar background) outlines the badge.
 Item {
   id: root
@@ -24,14 +24,14 @@ Item {
     id: cloudMetrics
     font.family: root.fontFamily
     font.pixelSize: 100
-    text: Model.ICON_CLOUD
+    text: Glyphs.ICON_CLOUD
   }
 
   Text {
     anchors.centerIn: parent
     textFormat: Text.PlainText
     renderType: Text.NativeRendering
-    text: Model.ICON_CLOUD
+    text: Glyphs.ICON_CLOUD
     color: root.color
     font.family: root.fontFamily
     font.pixelSize: Math.max(1, Math.round(100 * root.size / Math.max(1, cloudMetrics.tightBoundingRect.width, cloudMetrics.tightBoundingRect.height)))

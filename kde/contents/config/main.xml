@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- main.xml: settings of the MEGA Plasma widget. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <entry name="refreshIntervalSec" type="Int">
+      <label>How often to check MEGAcmd while the popup is closed, in seconds.</label>
+      <default>60</default>
+      <min>10</min>
+      <max>3600</max>
+    </entry>
+    <entry name="syncFolder" type="String">
+      <label>Suggested parent folder in MEGA when adding a sync.</label>
+      <default>/</default>
+    </entry>
+    <entry name="backupFolder" type="String">
+      <label>Suggested parent folder in MEGA when adding a backup.</label>
+      <default>/Backups</default>
+    </entry>
+    <entry name="terminal" type="String">
+      <label>Command that runs a program in a terminal, for the guided dialogs; empty finds one.</label>
+      <default></default>
+    </entry>
+    <entry name="previewName" type="String">
+      <label>Saved state from fixtures/ to show instead of MEGAcmd's; empty for the live state.</label>
+      <default></default>
+    </entry>
+  </group>
+</kcfg>

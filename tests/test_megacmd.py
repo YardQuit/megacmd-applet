@@ -1,13 +1,11 @@
-# test_status.py: tests for status.py's parsing of MEGAcmd output.
+# test_megacmd.py: tests for reading MEGAcmd's output and state.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Tests for the MEGAcmd output parsers in status.py.
+"""Tests for core/megacmd_applet/megacmd.py: the MEGAcmd output parsers, the
+engine check, and the saved states the command line prints.
 
 Run from the repository root with:  python3 -m unittest discover -s tests
 """
 
-import contextlib
-import importlib.util
-import io
 import json
 import pathlib
 import subprocess
@@ -17,9 +15,10 @@ import unittest
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SPEC = importlib.util.spec_from_file_location("status", ROOT / "status.py")
-status = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(status)
+CLI = ROOT / "bin" / "megacmd-applet"
+sys.path.insert(0, str(ROOT / "core"))
+
+from megacmd_applet import megacmd as status  # noqa: E402
 
 
 class StorageTests(unittest.TestCase):
@@ -33,7 +32,7 @@ class StorageTests(unittest.TestCase):
 
 
 def sync_table(*rows):
-    """MEGAcmd's sync table with the given rows, in the columns status.py asks for."""
+    """MEGAcmd's sync table with the given rows, in the columns megacmd.py asks for."""
     return "\n".join(status.SEPARATOR.join(row) for row in [status.SYNC_COLUMNS, *rows]) + "\n"
 
 
@@ -152,18 +151,16 @@ class TransferTests(unittest.TestCase):
 
 class EngineTests(unittest.TestCase):
     def collect(self, running):
-        """Runs status.py's main() with MEGAcmd installed; returns its JSON and the commands run."""
+        """Collects the state with MEGAcmd installed; returns it and the commands run."""
         calls = []
         def fake_run(args, timeout):
             calls.append(args[0])
             return 0, ""
-        out = io.StringIO()
         with mock.patch.object(status.shutil, "which", return_value="/usr/bin/mega-whoami"), \
              mock.patch.object(status, "engine_running", return_value=running), \
-             mock.patch.object(status, "run", side_effect=fake_run), \
-             mock.patch.object(sys, "argv", ["status.py"]), contextlib.redirect_stdout(out):
-            status.main()
-        return json.loads(out.getvalue()), calls
+             mock.patch.object(status, "run", side_effect=fake_run):
+            data = status.collect()
+        return data, calls
 
     def test_a_stopped_engine_is_reported_and_not_started(self):
         # Every mega-* client starts the engine when it is not running, so
@@ -179,21 +176,32 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(calls[0], "mega-whoami")
 
 
+def cli_status(path):
+    """Runs `megacmd-applet status --fixture PATH --no-notices`; returns the finished process."""
+    return subprocess.run([sys.executable, "-I", str(CLI), "status", "--fixture", str(path), "--no-notices"],
+                          capture_output=True, text=True, check=True)
+
+
 class FixtureTests(unittest.TestCase):
-    def test_every_fixture_is_printed_unchanged(self):
+    def test_every_fixture_keeps_its_fields_in_the_view(self):
         for path in sorted((ROOT / "fixtures").glob("*.json")):
             with self.subTest(fixture=path.name):
-                done = subprocess.run([sys.executable, "-I", str(ROOT / "status.py"), "--fixture", str(path)],
-                                      capture_output=True, text=True, check=True)
-                self.assertEqual(json.loads(done.stdout), json.loads(path.read_text()))
+                saved = json.loads(path.read_text())
+                shown = json.loads(cli_status(path).stdout)
+                for key, value in saved.items():
+                    if key in ("syncs", "backups"):
+                        for row, saved_row in zip(shown[key], value, strict=True):
+                            self.assertEqual({k: row[k] for k in saved_row}, saved_row)
+                    else:
+                        self.assertEqual(shown[key], value, key)
 
     def test_a_fixture_must_be_an_object(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json") as handle:
             handle.write("[1, 2]")
             handle.flush()
-            done = subprocess.run([sys.executable, "-I", str(ROOT / "status.py"), "--fixture", handle.name],
-                                  capture_output=True, text=True)
-        self.assertNotEqual(done.returncode, 0)
+            shown = json.loads(cli_status(handle.name).stdout)
+        self.assertFalse(shown["ok"])
+        self.assertIn("not a JSON object", shown["error"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=MEGA
+Comment=MEGA sync folders, backups, storage and transfers, using MEGAcmd
+Type=Application
+Exec=cosmic-applet-megacmd
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;MEGA;Sync;Backup;Cloud;
+Icon=io.github.yardquit.MegaCmd-synced-symbolic
+StartupNotify=true
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicHoverPopup=Auto

@@ -1,20 +1,16 @@
-#!/usr/bin/env python3
-# status.py: print the MEGAcmd account, sync, backup and transfer state as JSON.
+# megacmd.py: read the MEGAcmd account, sync, backup and transfer state.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Collect MEGAcmd's state for the MEGA bar widget.
+"""Collect MEGAcmd's state.
 
-Runs the mega-* client commands (which talk to the running MEGAcmd engine)
-and prints one JSON object on stdout:
+Runs the mega-* client commands, which talk to the running MEGAcmd engine,
+and returns one dictionary:
 
-    {"ok", "loggedIn", "email", "usedBytes", "totalBytes", "usagePercent",
-     "syncs": [...], "backups": [...], "transfers": {...}, "error"}
+    {"ok", "installed", "running", "loggedIn", "email", "usedBytes",
+     "totalBytes", "usagePercent", "syncs": [...], "backups": [...],
+     "transfers": {...}, "error"}
 
-When the MEGAcmd engine (mega-cmd-server) is not running, it prints
-"running": false and runs no mega-* command: each of them would start the
-engine again.
-
-Usage: status.py [TIMEOUT_SECONDS]
-       status.py --fixture FILE   (print a saved state instead, for previews and tests)
+When the MEGAcmd engine (mega-cmd-server) is not running, "running" is false
+and no mega-* command runs: each of them would start the engine again.
 """
 
 import json
@@ -22,7 +18,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 
 SYNC_COLUMNS = ["ID", "LOCALPATH", "REMOTEPATH", "RUN_STATE", "STATUS", "ERROR", "SIZE", "FILES", "DIRS"]
 # Column separator for the sync table: the ASCII unit separator, which a
@@ -175,40 +170,33 @@ def parse_transfers(text):
     }
 
 
-def print_fixture(path):
-    """Print the saved state in PATH, after checking it is a JSON object."""
+def load_fixture(path):
+    """Return the saved state in PATH, after checking it is a JSON object."""
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
-        raise SystemExit(f"{path}: not a JSON object")
-    print(json.dumps(data))
+        raise ValueError(f"{path}: not a JSON object")
+    return data
 
 
-def main():
-    """Print the collected state as JSON; exit 0 even when logged out."""
-    if len(sys.argv) == 3 and sys.argv[1] == "--fixture":
-        print_fixture(sys.argv[2])
-        return
-    timeout = float(sys.argv[1]) if len(sys.argv) > 1 else 20
+def collect(timeout=20):
+    """Return MEGAcmd's current state; each mega-* command gets TIMEOUT seconds."""
     status = {"ok": True, "installed": shutil.which("mega-whoami") is not None, "running": True,
               "loggedIn": False, "email": "",
               "usedBytes": 0, "totalBytes": 0, "usagePercent": 0.0,
               "syncs": [], "backups": [], "transfers": parse_transfers(""), "error": ""}
     if not status["installed"]:
-        print(json.dumps(status))
-        return
+        return status
     if not engine_running():
         status["running"] = False
-        print(json.dumps(status))
-        return
+        return status
 
     code, out = run(["mega-whoami"], timeout)
     match = re.search(r"Account e-mail:\s*(\S+)", out)
     if code == 124:
         status["error"] = "MEGAcmd is busy"
     if not match:
-        print(json.dumps(status))
-        return
+        return status
     status["loggedIn"] = True
     status["email"] = match.group(1)
 
@@ -225,9 +213,4 @@ def main():
 
     _, out = run(["mega-transfers", "--summary"], timeout)
     status["transfers"] = parse_transfers(out)
-
-    print(json.dumps(status))
-
-
-if __name__ == "__main__":
-    main()
+    return status

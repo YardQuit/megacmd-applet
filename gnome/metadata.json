@@ -6,5 +6,5 @@
   "settings-schema": "org.gnome.shell.extensions.megacmd",
   "gettext-domain": "megacmd@yardquit.github.io",
   "url": "https://github.com/YardQuit/megacmd-applet",
-  "version-name": "0.2.0"
+  "version-name": "0.2.1"
 }

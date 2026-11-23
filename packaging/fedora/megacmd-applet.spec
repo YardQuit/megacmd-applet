@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 Name:           megacmd-applet
-Version:        0.2.0
+Version:        0.2.1
 Release:        1%{?dist}
 Summary:        MEGA sync folders, backups, storage and transfers in the desktop's panel
 License:        GPL-3.0-or-later
@@ -116,5 +116,8 @@ The COSMIC panel applet; add it in Settings, Desktop, Panel, Applets.
 %license %{_licensedir}/%{name}-cosmic/THIRD-PARTY-LICENCES
 
 %changelog
+* Mon Nov 23 2026 YardQuit <yardquit@pm.me> - 0.2.1-1
+- First release with the Fedora, Ubuntu and Arch Linux packages.
+
 * Sun Nov 22 2026 YardQuit <yardquit@pm.me> - 0.2.0-1
 - Packages for the shared core and the KDE, GNOME and COSMIC applets.

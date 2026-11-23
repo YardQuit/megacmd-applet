@@ -1,3 +1,9 @@
+megacmd-applet (0.2.1-1) unstable; urgency=medium
+
+  * First release with the Fedora, Ubuntu and Arch Linux packages.
+
+ -- YardQuit <yardquit@pm.me>  Mon, 23 Nov 2026 12:00:00 +0000
+
 megacmd-applet (0.2.0-1) unstable; urgency=medium
 
   * Packages for the shared core and the KDE, GNOME and COSMIC applets.

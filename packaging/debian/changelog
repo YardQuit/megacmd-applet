@@ -1,3 +1,10 @@
+megacmd-applet (0.3.0-1) unstable; urgency=medium
+
+  * Show files that are not syncing and settle conflicting copies.
+  * Depend on libglib2.0-bin for gio, which moves files to the Trash.
+
+ -- YardQuit <yardquit@pm.me>  Tue, 24 Nov 2026 12:00:00 +0000
+
 megacmd-applet (0.2.1-1) unstable; urgency=medium
 
   * First release with the Fedora, Ubuntu and Arch Linux packages.

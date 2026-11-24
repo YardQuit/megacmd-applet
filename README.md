@@ -362,8 +362,9 @@ follows the layout of the applets in COSMIC's own `cosmic-applets` and is
 built with System76's libcosmic and the other Rust crates listed, with their
 licences, in `THIRD-PARTY-LICENCES`, installed beside it under
 `share/licenses/megacmd-applet-cosmic/` (`share/doc/megacmd-applet-cosmic/`
-on Debian and Ubuntu). MEGA and MEGAcmd are made by MEGA
-Limited.
+on Debian and Ubuntu). The three ways to settle a conflict between two
+copies follow the choices MEGA's own desktop app offers. MEGA and MEGAcmd
+are made by MEGA Limited.
 
 ## Licence
 

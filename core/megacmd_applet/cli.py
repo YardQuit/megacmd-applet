@@ -26,6 +26,11 @@
         Change syncs and backups. The "all" commands fail when nobody is
         logged in or the syncs cannot be read.
 
+    megacmd-applet resolve ISSUE_ID local|cloud|both VERSION
+        Settle a conflict between this computer's copy of a synced file and
+        MEGA's: keep this computer's, MEGA's or both. VERSION is the
+        fingerprint the issue was shown with (see actions.resolve_issue).
+
     megacmd-applet open-folder PATH
         Open the local folder PATH (absolute, existing) in the file manager.
 
@@ -47,7 +52,7 @@ import pathlib
 import re
 import sys
 
-from . import actions, megacmd, notices, view
+from . import actions, megacmd, model, notices, view
 
 FIXTURES = pathlib.Path(__file__).resolve().parent.parent.parent / "fixtures"
 PREVIEW_NAME = re.compile(r"[A-Za-z0-9_-]+")
@@ -113,6 +118,10 @@ def parser():
     commands.add_parser("remove-backup", help="remove a backup").add_argument("tag")
     for name in ("pause-all", "resume-all", "toggle-all"):
         commands.add_parser(name, help=f"{name.replace('-', ' ')} syncing")
+    resolve = commands.add_parser("resolve", help="settle a conflict between two copies of a synced file")
+    resolve.add_argument("issue_id")
+    resolve.add_argument("choice", choices=[name for name, _, _ in model.CHOICES])
+    resolve.add_argument("version")
     commands.add_parser("open-folder", help="open a local folder in the file manager").add_argument("path")
 
     guided = commands.add_parser("guided", help="open a guided dialog in a terminal")
@@ -137,6 +146,8 @@ def run_action(args, argv):
         actions.remove_backup(args.tag)
     elif args.command in ("pause-all", "resume-all", "toggle-all"):
         actions.set_all_paused({"pause-all": True, "resume-all": False, "toggle-all": None}[args.command])
+    elif args.command == "resolve":
+        actions.resolve_issue(args.issue_id, args.choice, args.version)
     elif args.command == "open-folder":
         actions.open_folder(args.path)
     elif args.command == "guided":

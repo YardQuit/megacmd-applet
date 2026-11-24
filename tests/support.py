@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Helpers shared by the tests.
 
-Importing this module puts a folder of poison mega-* commands (and
-xdg-open) first on this process's PATH: if any test reaches one of them
+Importing this module puts a folder of poison mega-* commands (and xdg-open
+and gio) first on this process's PATH: if any test reaches one of them
 instead of a stand-in, the call is logged and CheckedTestCase fails, and no
 real MEGAcmd command runs. Every environment made here also points HOME and
 the XDG folders into a temporary folder.
@@ -26,8 +26,8 @@ sys.path.insert(0, str(ROOT / "core"))
 
 # Every command the core and the guided dialogs may run that must never be
 # the real one during a test.
-GUARDED = ("mega-whoami", "mega-df", "mega-sync", "mega-backup", "mega-transfers", "mega-ls", "mega-mkdir",
-           "mega-cmd", "mega-exec", "mega-cmd-server", "xdg-open")
+GUARDED = ("mega-whoami", "mega-df", "mega-sync", "mega-sync-issues", "mega-backup", "mega-transfers", "mega-ls",
+           "mega-mkdir", "mega-mv", "mega-cmd", "mega-exec", "mega-cmd-server", "xdg-open", "gio")
 XDG_NAMES = ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR")
 
 POISON = """#!/bin/sh
@@ -110,15 +110,15 @@ def run_cli(*args, env):
 
 
 class FakeMegaCmd:
-    """Stand-in mega-* commands (and pgrep, xdg-open) in a temporary folder, with a fenced environment.
+    """Stand-in mega-* commands (and pgrep, xdg-open, gio) in a temporary folder, with a fenced environment.
 
     The folder goes first on PATH unless ON_PATH is false; then only the
     poison commands stand where the real ones would be. Each stand-in
     prints OUTPUT and exits with EXIT_CODE unless set() says otherwise.
     """
 
-    NAMES = ("mega-whoami", "mega-df", "mega-sync", "mega-backup", "mega-transfers", "mega-ls", "mega-mkdir",
-             "mega-cmd", "pgrep", "xdg-open")
+    NAMES = ("mega-whoami", "mega-df", "mega-sync", "mega-sync-issues", "mega-backup", "mega-transfers", "mega-ls",
+             "mega-mkdir", "mega-mv", "mega-cmd", "pgrep", "xdg-open", "gio")
 
     def __init__(self, output="", exit_code=0, on_path=True):
         self.folder = tempfile.TemporaryDirectory()
@@ -163,6 +163,19 @@ def logged_in(fake, syncs="", whoami="Account e-mail: user@example.com\n"):
     """Set up FAKE as a running MEGAcmd with someone logged in and the sync table SYNCS."""
     fake.set("mega-whoami", whoami)
     fake.set("mega-sync", syncs)
+
+
+def issue_details(issue_id, sync_id, reason, *rows):
+    """MEGAcmd's details of one sync issue, as `mega-sync-issues --detail` prints them with SEPARATOR.
+
+    Each of ROWS is (path, problem, modified, uploaded, size), with "-" for
+    nothing and cloud paths starting with "<CLOUD>".
+    """
+    separator = "\x1f"
+    lines = [f"[Details on issue {issue_id}]", reason,
+             f"Parent sync: {sync_id} (/home/user/Documents to <CLOUD>/Sync/Documents)", "",
+             separator.join(["PATH", "PATH_ISSUE", "LAST_MODIFIED", "UPLOADED", "SIZE"])]
+    return "\n".join(lines + [separator.join(row) for row in rows]) + "\n\n"
 
 
 def tool_dir(base, names):

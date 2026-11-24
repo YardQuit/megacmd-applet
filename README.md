@@ -6,12 +6,15 @@ desktop app. It runs in the [Omarchy](https://omarchy.org) bar, KDE Plasma 6,
 GNOME Shell 48–51 and the COSMIC panel.
 
 - A cloud icon in the panel showing the overall state: up to date, syncing,
-  paused, storage nearly full, an error, or logged out.
+  paused, files not syncing, storage nearly full, an error, or logged out.
 - A popup to pause, resume, add and remove sync folders and scheduled,
   versioned backups, with storage use and transfer progress, and a switch
   that pauses or resumes all syncing.
-- A desktop notification once per problem: a sync error, a failed backup,
-  being logged out, the MEGAcmd engine stopping, and storage use crossing 90%
+- The files MEGA cannot sync, listed in the popup. When a file was changed
+  both here and in MEGA, one button keeps this computer's copy, MEGA's copy
+  or both; the copy not kept goes to the Trash or the MEGA Rubbish bin.
+- A desktop notification once per problem: a sync error, a file that is not
+  syncing, a failed backup, being logged out, the MEGAcmd engine stopping, and storage use crossing 90%
   and 95%. Notifications name no folder; clicking one opens the popup, which
   shows it.
 - The applet never starts the MEGAcmd engine by itself. When the engine is
@@ -30,7 +33,8 @@ the core reports.
 
 - MEGAcmd, from [MEGA's Linux downloads](https://mega.io/cmd#download) (the
   package is `megacmd`).
-- `python3`, `gum` (for the guided dialogs), `pgrep` and `xdg-open`.
+- `python3`, `gum` (for the guided dialogs), `pgrep`, `xdg-open` and `gio`
+  (to move a copy that is not kept to the Trash).
 - A terminal for the guided dialogs. The applet uses `xdg-terminal-exec` when
   installed, else the first it finds of Ptyxis, GNOME Console, GNOME
   Terminal, Konsole, COSMIC Terminal, kitty, foot and Alacritty, else
@@ -197,6 +201,24 @@ where they are. Only the buttons act: clicking elsewhere on a row does
 nothing. When MEGAcmd is stopped, logged out, not installed or cannot be
 read, the popup says so, and offers **Start MEGAcmd** or **Log in to MEGA**
 where that helps.
+
+Files MEGA cannot sync are listed under **Not syncing**, at most five at a
+time. Most often a file was changed both on this computer and in MEGA since
+they were last in step, and MEGA waits for a choice. The popup shows the date
+and size of each copy and offers three buttons:
+
+- **Keep both** renames MEGA's copy to `name (1).ext`, so both end up in the
+  folder on both sides.
+- **Keep this computer's** moves MEGA's copy to the MEGA Rubbish bin; this
+  computer's copy is then uploaded.
+- **Keep MEGA's** moves this computer's copy to the Trash; MEGA's copy is
+  then downloaded.
+
+Nothing is deleted, so each choice can be undone from the Trash or the
+Rubbish bin. If either copy changed after the popup showed it, the button
+does nothing and says so. Other problems, such as a file that cannot be
+read, offer **Open folder**; `mega-sync-issues --detail --all` in a terminal
+shows every issue in full.
 
 **Add sync…** and **Add backup…** open a short guided dialog in a terminal:
 pick the local folder, confirm or change the suggested MEGA folder and, for a

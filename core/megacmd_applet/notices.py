@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Decide which notifications an applet should show.
 
-A notification goes out once per problem: a sync error, a failed backup, the
-MEGAcmd engine stopping, being logged out, and storage use crossing 90% and
-95%. Several new problems of one kind at once (say three stopped syncs) give
-one notification for all of them. What has been reported is kept in a small
-state file, shared by every applet of the user, so two applets never report
-the same problem twice and a restart does not repeat old problems.
+A notification goes out once per problem: a sync error, a file that is not
+syncing (a sync issue), a failed backup, the MEGAcmd engine stopping, being
+logged out, and storage use crossing 90% and 95%. Several new problems of
+one kind at once (say three stopped syncs) give one notification for all of
+them. What has been reported is kept in a small state file, shared by every
+applet of the user, so two applets never report the same problem twice and a
+restart does not repeat old problems.
 
 A part of the state that was not read (MEGAcmd stopped, nobody logged in, or
 a command that failed; see megacmd.py) keeps what was recorded for it, so
@@ -29,8 +30,8 @@ from . import model
 
 FRESH = {"reported": [], "wasRunning": True, "wasLoggedIn": False, "storageLevel": 0}
 # The part of the state (see megacmd.py "unread") each kind of problem comes from.
-PROBLEM_PART = {"sync": "syncs", "backup": "backups"}
-ALL_PARTS = {"storage", "syncs", "backups"}
+PROBLEM_PART = {"sync": "syncs", "issue": "sync issues", "backup": "backups"}
+ALL_PARTS = {"storage", "syncs", "sync issues", "backups"}
 
 
 def default_state_path():
@@ -66,6 +67,8 @@ def new_notices(status, state):
     running = status.get("running") is not False
     logged_in = installed and running and status.get("loggedIn") is True
     unread = set(status.get("unread") or []) if logged_in else set(ALL_PARTS)
+    if "syncs" in unread:
+        unread.add("sync issues")
 
     reported = set(previous["reported"])
     current = model.problems(status)

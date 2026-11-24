@@ -1,4 +1,4 @@
-# megacmd.py: read the MEGAcmd account, sync, backup and transfer state.
+# megacmd.py: read the MEGAcmd account, sync, sync issue, backup and transfer state.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Collect MEGAcmd's state.
 
@@ -6,17 +6,20 @@ Runs the mega-* client commands, which talk to the running MEGAcmd engine,
 and returns one dictionary:
 
     {"ok", "installed", "running", "loggedIn", "email", "usedBytes",
-     "totalBytes", "usagePercent", "syncs": [...], "backups": [...],
-     "transfers": {...}, "unread": [...], "error"}
+     "totalBytes", "usagePercent", "syncs": [...], "issues": [...],
+     "backups": [...], "transfers": {...}, "unread": [...], "error"}
 
 When the MEGAcmd engine (mega-cmd-server) is not running, "running" is false
 and no mega-* command runs: each of them would start the engine again.
 
 "ok" is false when it cannot be told whether anyone is logged in (MEGAcmd
 busy or failing); "error" then says why. When logged in, "unread" names the
-parts ("storage", "syncs", "backups", "transfers") whose command failed or
-timed out, and "error" carries a note about them; those parts are left empty
+parts ("storage", "syncs", "sync issues", "backups", "transfers") whose
+command failed or timed out, and "error" carries a note about them; those parts are left empty
 and must not be taken for "nothing there".
+
+"issues" lists the sync issues (see parse_sync_issues); MEGAcmd is asked
+for them only when a sync reports some.
 """
 
 import json
@@ -26,7 +29,7 @@ import shutil
 import signal
 import subprocess
 
-from .model import number
+from .model import issue_count, number
 
 SYNC_COLUMNS = ["ID", "LOCALPATH", "REMOTEPATH", "RUN_STATE", "STATUS", "ERROR", "SIZE", "FILES", "DIRS"]
 # Column separator for the sync table: the ASCII unit separator, which a
@@ -41,6 +44,16 @@ HISTORY_ROW = re.compile(r"\s+(.*\S)\s{2,}(\w{3}, .*?\d{4} \d\d:\d\d:\d\d [+-]\d
 # The start of a MEGAcmd error message, e.g. "[API:err: 10:00:00]" or "[10:00:00 ERR".
 MEGA_ERROR = re.compile(r"\[[^\]]*\bERR\b", re.IGNORECASE)
 NOT_LOGGED_IN = re.compile(r"not logged in", re.IGNORECASE)
+# The warning mega-sync adds to its output while syncs have issues.
+ISSUES_WARNING = re.compile(r"\[[^\]]*\bERR\b\s+You have sync issues\b[^\]]*\]")
+# The edges and lines of the boxed notices MEGAcmd prints now and then before a command's output.
+BOX_EDGE = re.compile(r"\s*-{20,}\s*")
+BOX_LINE = re.compile(r"\s*\|.*\|\s*")
+# Most sync issues kept from one listing; a sync with thousands of them would make the state too big to poll.
+ISSUE_LIMIT = 50
+ISSUE_HEADER = re.compile(r"\[Details on issue (\S+)\]")
+PARENT_SYNC = re.compile(r"Parent sync: (\S+) \(")
+CLOUD_PREFIX = "<CLOUD>"
 
 # Exit statuses run() reports for a command that timed out or could not start.
 TIMED_OUT = 124
@@ -72,7 +85,34 @@ def run(args, timeout):
         process.stderr.close()
         process.wait()
         return TIMED_OUT, ""
-    return process.returncode, (out + err).decode("utf-8", "replace")
+    return process.returncode, without_warnings((out + err).decode("utf-8", "replace"))
+
+
+def without_warnings(output):
+    """OUTPUT without MEGAcmd's warning about sync issues and without its boxed notices.
+
+    mega-sync adds the warning to its output while syncs have issues, and
+    any command may start with a boxed notice; neither is part of the
+    command's answer.
+    """
+    lines = output.splitlines(keepends=True)
+    kept = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].rstrip("\n")
+        if ISSUES_WARNING.fullmatch(line.strip()):
+            index += 1
+            continue
+        if BOX_EDGE.fullmatch(line):
+            end = index + 1
+            while end < len(lines) and BOX_LINE.fullmatch(lines[end].rstrip("\n")):
+                end += 1
+            if end > index + 1 and end < len(lines) and BOX_EDGE.fullmatch(lines[end].rstrip("\n")):
+                index = end + 1
+                continue
+        kept.append(lines[index])
+        index += 1
+    return "".join(kept)
 
 
 def error_text(output):
@@ -223,6 +263,61 @@ def parse_transfers(text):
     }
 
 
+def issue_field(value):
+    """A cell of the sync issue table with its spaces evened out, and MEGAcmd's "-" for "nothing" given as ""."""
+    value = re.sub(r"\s+", " ", value.strip())
+    return "" if value == "-" else value
+
+
+def parse_sync_issues(text):
+    """Return the sync issues in `mega-sync-issues --detail --all` output separated by SEPARATOR.
+
+    Each issue is {"id", "syncId", "reason", "paths"}, and each of its paths
+    {"path", "cloud", "problem", "modified", "uploaded", "size"}: "cloud" is
+    true for a path in MEGA (given without MEGAcmd's "<CLOUD>" prefix),
+    "problem" says what is wrong with that path, if anything, and "size" is
+    empty for a folder. Issues and syncs with IDs that could pass for an
+    option, local paths that are not absolute and rows without every column
+    are left out; at most ISSUE_LIMIT issues are kept.
+    """
+    issues = []
+    current = None
+    columns = None
+    for line in text.splitlines():
+        header = ISSUE_HEADER.fullmatch(line.strip())
+        if header:
+            if len(issues) == ISSUE_LIMIT:
+                break
+            current = {"id": header.group(1), "syncId": "", "reason": "", "paths": []}
+            issues.append(current)
+            columns = None
+            continue
+        if current is None or not line.strip():
+            continue
+        parts = line.split(SEPARATOR)
+        if columns is None and len(parts) > 1 and parts[0].strip() == "PATH":
+            columns = [part.strip() for part in parts]
+        elif columns is not None:
+            if len(parts) != len(columns):
+                continue
+            row = dict(zip(columns, parts, strict=True))
+            path = row["PATH"].strip()
+            cloud = path.startswith(CLOUD_PREFIX + "/")
+            if not cloud and not path.startswith("/"):
+                continue
+            current["paths"].append({
+                "path": path[len(CLOUD_PREFIX):] if cloud else path, "cloud": cloud,
+                "problem": issue_field(row.get("PATH_ISSUE", "")),
+                "modified": issue_field(row.get("LAST_MODIFIED", "")),
+                "uploaded": issue_field(row.get("UPLOADED", "")), "size": issue_field(row.get("SIZE", "")),
+            })
+        elif parent := PARENT_SYNC.match(line):
+            current["syncId"] = parent.group(1)
+        elif not current["reason"]:
+            current["reason"] = line.strip()
+    return [issue for issue in issues if SYNC_ID.fullmatch(issue["id"]) and SYNC_ID.fullmatch(issue["syncId"])]
+
+
 def load_fixture(path):
     """Return the saved state in PATH, after checking it is a JSON object."""
     with open(path, encoding="utf-8") as handle:
@@ -236,7 +331,7 @@ def blank_status():
     """A state with every field and nothing in it: installed, running, not logged in."""
     return {"ok": True, "installed": True, "running": True, "loggedIn": False, "email": "",
             "usedBytes": 0, "totalBytes": 0, "usagePercent": 0.0,
-            "syncs": [], "backups": [], "transfers": parse_transfers(""), "unread": [], "error": ""}
+            "syncs": [], "issues": [], "backups": [], "transfers": parse_transfers(""), "unread": [], "error": ""}
 
 
 def unreadable_status(reason):
@@ -270,6 +365,15 @@ def read_syncs(timeout):
     if failed(code, out):
         return None
     return parse_syncs(out)
+
+
+def read_sync_issues(timeout):
+    """Return the sync issues (see parse_sync_issues), or None when MEGAcmd did not answer (see failed)."""
+    code, out = run(["mega-sync-issues", "--detail", "--all", "--limit=0", "--disable-path-collapse",
+                     "--col-separator=" + SEPARATOR], timeout)
+    if failed(code, out):
+        return None
+    return parse_sync_issues(out)
 
 
 def unread_note(parts):
@@ -315,6 +419,12 @@ def collect(timeout=20):
         status["syncs"], unreadable = found
         if unreadable:
             notes.append("Some syncs could not be read; list them with mega-sync in a terminal.")
+        if any(issue_count(sync) for sync in status["syncs"]):
+            issues = read_sync_issues(timeout)
+            if issues is None:
+                unread.append("sync issues")
+            else:
+                status["issues"] = issues
 
     code, out = run(["mega-backup", "-l", "-h", WIDE_PATHS], timeout)
     if failed(code, out):

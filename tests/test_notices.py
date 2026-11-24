@@ -171,5 +171,31 @@ class PreviewTests(CheckedTestCase):
             self.assertFalse((pathlib.Path(env["XDG_RUNTIME_DIR"]) / "megacmd-applet").exists())
 
 
+class SyncIssueNoticeTests(CheckedTestCase):
+    """Reporting files that are not syncing."""
+
+    def setUp(self):
+        super().setUp()
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.state = pathlib.Path(self.folder.name) / "notices.json"
+
+    def take(self, status):
+        """Takes the new notices for STATUS from the test state file."""
+        return notices.take_notices(status, self.state)
+
+    def test_new_issues_give_one_notice_and_are_not_repeated(self):
+        first = self.take(fixture("sync-issues.json"))
+        self.assertEqual([n["title"] for n in first], ["MEGA: 2 files are not syncing"])
+        self.assertEqual(self.take(fixture("sync-issues.json")), [])
+
+    def test_issues_that_could_not_be_read_keep_what_was_reported(self):
+        self.take(fixture("sync-issues.json"))
+        for part in ("sync issues", "syncs"):
+            unread = dict(fixture("sync-issues.json"), issues=[], unread=[part])
+            self.assertEqual(self.take(unread), [], part)
+            self.assertEqual(self.take(fixture("sync-issues.json")), [], part)
+
+
 if __name__ == "__main__":
     unittest.main()

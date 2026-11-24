@@ -9,7 +9,7 @@ use cosmic::widget::{button, divider, icon, scrollable, text, toggler, tooltip};
 use cosmic::{Application, Element};
 
 use crate::app::{Applet, Message};
-use crate::model::state_icon;
+use crate::model::{Issue, state_icon};
 
 /// The popup's width, room for a folder pair on one line.
 pub const WIDTH: f32 = 440.0;
@@ -37,6 +37,18 @@ pub fn view(app: &Applet) -> Element<'_, Message> {
     if view.signed_in() {
         content = content.push(account(app));
         content = content.push(separator());
+        if !view.issues.is_empty() {
+            content = content.push(heading("Not syncing"));
+            for issue in &view.issues {
+                content = content.push(issue_block(issue));
+            }
+            if !view.issues_more_text.is_empty() {
+                content = content.push(padded_control(
+                    text::caption(view.issues_more_text.as_str()).wrapping(Wrapping::WordOrGlyph),
+                ));
+            }
+            content = content.push(separator());
+        }
         content = content.push(heading("Sync folders"));
         for sync in &view.syncs {
             let (action_icon, action_label, verb) = if sync.paused {
@@ -159,6 +171,29 @@ fn warning_text() -> cosmic::theme::Text {
 /// A section heading reading LABEL.
 fn heading(label: &str) -> Element<'_, Message> {
     padded_control(text::heading(label)).into()
+}
+
+/// One file that is not syncing: its name, sync, what is wrong and a line
+/// for each copy, then the core's buttons for it. Pressing a button runs the
+/// core with that button's arguments. Texts and buttons wrap.
+fn issue_block(issue: &Issue) -> Element<'_, Message> {
+    let mut lines = column![
+        text::body(issue.title.as_str()).wrapping(Wrapping::WordOrGlyph),
+        text::caption(issue.sync_title.as_str()).wrapping(Wrapping::WordOrGlyph),
+        text::caption(issue.text.as_str()).wrapping(Wrapping::WordOrGlyph),
+    ]
+    .spacing(2);
+    for line in &issue.lines {
+        lines = lines.push(text::caption(line.as_str()).wrapping(Wrapping::WordOrGlyph));
+    }
+    let buttons = issue.actions.iter().fold(row![].spacing(8), |buttons, action| {
+        buttons.push(tooltip(
+            button::standard(action.label.as_str()).on_press(Message::Act(action.args.clone())),
+            text::caption(action.hint.as_str()),
+            tooltip::Position::Bottom,
+        ))
+    });
+    padded_control(lines.push(buttons.wrap()).spacing(4)).into()
 }
 
 /// A horizontal line between sections.

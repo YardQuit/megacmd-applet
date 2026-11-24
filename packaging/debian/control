@@ -21,7 +21,7 @@ Rules-Requires-Root: no
 
 Package: megacmd-applet
 Architecture: all
-Depends: ${misc:Depends}, python3, gum, procps, xdg-utils
+Depends: ${misc:Depends}, python3, gum, procps, xdg-utils, libglib2.0-bin
 Recommends: megacmd
 Description: MEGA sync folders, backups, storage and transfers in the panel
  MEGA in the desktop's panel, driven by MEGAcmd: sync folders, backups,

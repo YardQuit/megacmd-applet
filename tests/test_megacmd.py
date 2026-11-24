@@ -1,7 +1,7 @@
 # test_megacmd.py: tests for reading MEGAcmd's output and state.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for core/megacmd_applet/megacmd.py: the MEGAcmd output parsers, the
-engine check, and the saved states the command line prints.
+sync issues, the engine check, and the saved states the command line prints.
 
 Run from the repository root with:  python3 -m unittest discover -s tests
 """
@@ -14,7 +14,7 @@ import time
 import unittest
 from unittest import mock
 
-from support import ROOT, CheckedTestCase, FakeMegaCmd, fenced_env, run_cli, write_script
+from support import ROOT, CheckedTestCase, FakeMegaCmd, fenced_env, issue_details, logged_in, run_cli, write_script
 
 from megacmd_applet import megacmd as status
 
@@ -275,6 +275,92 @@ class RunTests(CheckedTestCase):
         self.assertEqual(status.run([str(self.dir / "missing")], 5), (status.NOT_FOUND, ""))
 
 
+ISSUES_WARNING = ('[2026-11-24_12-21-09.458504 cmd ERR  You have sync issues. '
+                  'Use the "mega-sync-issues" command to display them.]\n')
+ISSUES_BOX = (" " + "-" * 79 + "\n"
+              + "| Sync issues detected: your syncs have encountered conflicts.".ljust(80) + "|\n"
+              + "|   Use the \"mega-sync-issues\" command to display them.".ljust(80) + "|\n"
+              + " " + "-" * 79 + "\n")
+CONFLICT = issue_details(
+    "iss_1", "abc", "Unable to sync 'Budget.ods'. This file has conflicting copies.",
+    ("/home/user/Documents/Budget.ods", "-", "2026-10-20 09:14:02", "-", "48.20 KB"),
+    ("<CLOUD>/Sync/Documents/Budget.ods", "-", "2026-10-22 18:40:51", "2026-10-22 18:40:53", "47.95 KB"))
+UNREADABLE = issue_details(
+    "iss_2", "abc", "Unable to sync 'Notes.txt'. The file could not be read.",
+    ("/home/user/Documents/Notes.txt", "Permission denied", "2026-10-21 11:02:40", "-", "2.10 KB"))
+
+
+class WarningTests(CheckedTestCase):
+    """MEGAcmd's warnings about sync issues are not taken for part of an answer."""
+
+    def test_the_sync_issues_warning_is_not_taken_for_an_unreadable_sync(self):
+        fake = FakeMegaCmd()
+        self.addCleanup(fake.close)
+        row = ["abc", "/home/user/Notes", "/Sync/Notes", "Running", "Synced", "NO", "1.50 MB", "12", "3"]
+        logged_in(fake, sync_table(row) + ISSUES_WARNING)
+        fake.set("mega-df", STORAGE[1])
+        shown = json.loads(fake.run_cli("status", "--no-notices").stdout)
+        self.assertEqual([sync["id"] for sync in shown["syncs"]], ["abc"])
+        self.assertEqual(shown["error"], "")
+
+    def test_a_boxed_notice_is_left_out_and_other_dashed_lines_kept(self):
+        table = "Cloud drive: 1 in 1 file(s)\n" + "-" * 75 + "\nUSED STORAGE: 1 50.00% of 2\n"
+        self.assertEqual(status.without_warnings(ISSUES_BOX + table + ISSUES_WARNING), table)
+
+    def test_an_unclosed_box_is_kept(self):
+        text = " " + "-" * 30 + "\n| half a notice |\n"
+        self.assertEqual(status.without_warnings(text), text)
+
+
+class SyncIssueTests(CheckedTestCase):
+    """Reading the sync issues from mega-sync-issues."""
+
+    def test_each_issue_has_its_sync_reason_and_paths(self):
+        issues = status.parse_sync_issues(CONFLICT + UNREADABLE)
+        self.assertEqual([(i["id"], i["syncId"]) for i in issues], [("iss_1", "abc"), ("iss_2", "abc")])
+        self.assertEqual(issues[0]["reason"], "Unable to sync 'Budget.ods'. This file has conflicting copies.")
+        local, cloud = issues[0]["paths"]
+        self.assertEqual(local, {"path": "/home/user/Documents/Budget.ods", "cloud": False, "problem": "",
+                                 "modified": "2026-10-20 09:14:02", "uploaded": "", "size": "48.20 KB"})
+        self.assertEqual((cloud["path"], cloud["cloud"], cloud["uploaded"]),
+                         ("/Sync/Documents/Budget.ods", True, "2026-10-22 18:40:53"))
+        self.assertEqual(issues[1]["paths"][0]["problem"], "Permission denied")
+
+    def test_sizes_have_their_spaces_evened_out(self):
+        issue = status.parse_sync_issues(CONFLICT.replace("48.20 KB", "18.00  B"))[0]
+        self.assertEqual(issue["paths"][0]["size"], "18.00 B")
+
+    def test_ids_that_could_pass_for_options_are_left_out(self):
+        text = CONFLICT.replace("issue iss_1]", "issue -x]") + UNREADABLE.replace("sync: abc", "sync: --all")
+        self.assertEqual(status.parse_sync_issues(text), [])
+
+    def test_rows_without_every_column_or_an_absolute_path_are_left_out(self):
+        text = CONFLICT.replace("\x1f2026-10-20 09:14:02", "").replace("<CLOUD>/Sync", "Sync")
+        self.assertEqual(status.parse_sync_issues(text)[0]["paths"], [])
+
+    def test_at_most_the_limit_of_issues_is_kept(self):
+        text = "".join(CONFLICT.replace("iss_1", f"iss{n}") for n in range(status.ISSUE_LIMIT + 5))
+        self.assertEqual(len(status.parse_sync_issues(text)), status.ISSUE_LIMIT)
+
+    def test_issues_are_asked_for_only_when_a_sync_has_some(self):
+        row = ["abc", "/home/user/Documents", "/Sync/Documents", "Running", "Pending", "NO", "1 B", "1", "0"]
+        _, calls = collect_with(mega_whoami=LOGGED_IN, mega_df=STORAGE, mega_sync=(0, sync_table(row)))
+        self.assertNotIn("mega-sync-issues", calls)
+        row[5] = "Sync Issues (2)"
+        data, calls = collect_with(mega_whoami=LOGGED_IN, mega_df=STORAGE, mega_sync=(0, sync_table(row)),
+                                   mega_sync_issues=(0, CONFLICT + UNREADABLE))
+        self.assertIn("mega-sync-issues", calls)
+        self.assertEqual([issue["id"] for issue in data["issues"]], ["iss_1", "iss_2"])
+
+    def test_issues_that_cannot_be_read_are_named(self):
+        row = ["abc", "/home/user/Documents", "/Sync/Documents", "Running", "Pending", "Sync Issues (1)", "1 B",
+               "1", "0"]
+        data, _ = collect_with(mega_whoami=LOGGED_IN, mega_df=STORAGE, mega_sync=(0, sync_table(row)),
+                               mega_sync_issues=(status.TIMED_OUT, ""))
+        self.assertEqual((data["unread"], data["issues"]), (["sync issues"], []))
+        self.assertEqual(data["error"], "Could not read the sync issues from MEGAcmd.")
+
+
 def cli_status(path):
     """Runs `megacmd-applet status --fixture PATH --no-notices` in a fenced environment; returns the process."""
     with tempfile.TemporaryDirectory() as base:
@@ -292,7 +378,7 @@ class FixtureTests(CheckedTestCase):
                 saved = json.loads(path.read_text())
                 shown = json.loads(cli_status(path).stdout)
                 for key, value in saved.items():
-                    if key in ("syncs", "backups"):
+                    if key in ("syncs", "issues", "backups"):
                         for row, saved_row in zip(shown[key], value, strict=True):
                             self.assertEqual({k: row[k] for k in saved_row}, saved_row)
                     else:

@@ -7,8 +7,9 @@ import org.kde.plasma.extras as PlasmaExtras
 import org.kde.kirigami as Kirigami
 
 // The overall state with a switch that pauses or resumes all syncing, the
-// account's storage and transfers, the sync folders and backups with their
-// buttons, and the actions to add more. Otherwise the state and, when the
+// account's storage and transfers, the files that are not syncing with
+// their buttons, the sync folders and backups with their buttons, and the
+// actions to add more. Otherwise the state and, when the
 // core offers one, a button that logs in or starts MEGAcmd.
 PlasmaExtras.Representation {
     id: full
@@ -118,6 +119,70 @@ PlasmaExtras.Representation {
                 opacity: 0.7
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
+            }
+
+            Kirigami.Heading {
+                visible: root.showAccount && issues.count > 0
+                level: 4
+                text: i18n("Not syncing")
+                Layout.topMargin: Kirigami.Units.largeSpacing
+            }
+            Repeater {
+                id: issues
+                model: root.showAccount && root.view.issues ? root.view.issues : []
+                ColumnLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    spacing: 0
+                    PlasmaComponents3.Label {
+                        text: modelData.title
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        elide: Text.ElideMiddle
+                    }
+                    PlasmaComponents3.Label {
+                        text: modelData.syncTitle
+                        textFormat: Text.PlainText
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
+                        Layout.fillWidth: true
+                        elide: Text.ElideMiddle
+                    }
+                    Repeater {
+                        model: [modelData.text].concat(modelData.lines)
+                        PlasmaComponents3.Label {
+                            required property string modelData
+                            text: modelData
+                            textFormat: Text.PlainText
+                            opacity: 0.7
+                            font: Kirigami.Theme.smallFont
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: Kirigami.Units.smallSpacing
+                        Repeater {
+                            model: modelData.actions
+                            PlasmaComponents3.Button {
+                                required property var modelData
+                                text: modelData.label
+                                onClicked: root.act(modelData.args)
+                                PlasmaComponents3.ToolTip.text: modelData.hint
+                                PlasmaComponents3.ToolTip.visible: hovered && modelData.hint !== ""
+                            }
+                        }
+                    }
+                }
+            }
+            PlasmaComponents3.Label {
+                visible: root.showAccount && text !== ""
+                text: root.view.issuesMoreText || ""
+                textFormat: Text.PlainText
+                opacity: 0.7
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
             }
 
             Kirigami.Heading {

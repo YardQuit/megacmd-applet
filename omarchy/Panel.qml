@@ -204,6 +204,8 @@ Panel {
     readonly property string email: ""
     readonly property var syncs: []
     readonly property var backups: []
+    readonly property var issues: []
+    readonly property string issuesMoreText: ""
     readonly property string usageText: ""
     readonly property int storageLevel: 0
     readonly property string transfersText: ""
@@ -231,6 +233,7 @@ Panel {
     function addBackup() {}
     function login() {}
     function openFolder(path) {}
+    function runIssueAction(args) {}
     function openWeb() {}
   }
 
@@ -420,6 +423,36 @@ Panel {
           }
 
           PanelSeparator { visible: mega.ready; foreground: root.foreground }
+
+          Column {
+            visible: mega.ready && mega.issues.length > 0
+            width: parent.width
+            spacing: Style.space(6)
+
+            PanelSectionHeader { text: "NOT SYNCING"; foreground: root.foreground; fontFamily: root.fontFamily }
+
+            Repeater {
+              model: mega.issues
+              IssueBlock {
+                required property var modelData
+                width: parent.width
+                issue: modelData
+              }
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              visible: text !== ""
+              width: parent.width
+              text: mega.issuesMoreText
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.Wrap
+            }
+          }
+
+          PanelSeparator { visible: mega.ready && mega.issues.length > 0; foreground: root.foreground }
 
           Column {
             visible: mega.ready
@@ -679,6 +712,96 @@ Panel {
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       elide: Text.ElideRight
+    }
+  }
+
+  // A file that is not syncing: its name, what is wrong and a button for each
+  // way the core offers to put it right.
+  component IssueBlock: Column {
+    id: issueBlock
+    property var issue: ({})
+    readonly property var details: [String(issue.text || "")].concat(issue.lines || [])
+                                   .filter(function(t) { return t !== "" })
+
+    spacing: Style.space(2)
+
+    Text {
+      textFormat: Text.PlainText
+      width: parent.width
+      text: String(issueBlock.issue.title || "")
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
+      elide: Text.ElideMiddle
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      width: parent.width
+      text: String(issueBlock.issue.syncTitle || "")
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      elide: Text.ElideMiddle
+    }
+
+    Repeater {
+      model: issueBlock.details
+      Text {
+        required property string modelData
+        textFormat: Text.PlainText
+        width: issueBlock.width
+        text: modelData
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.Wrap
+      }
+    }
+
+    Flow {
+      width: parent.width
+      topPadding: Style.space(4)
+      spacing: Style.space(6)
+
+      Repeater {
+        model: issueBlock.issue.actions || []
+        Rectangle {
+          id: issueButton
+          required property var modelData
+          width: Math.min(buttonLabel.implicitWidth + Style.space(20), parent.width)
+          height: buttonLabel.implicitHeight + Style.space(10)
+          radius: Style.space(6)
+          color: buttonArea.containsMouse ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16)
+                                          : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+
+          Text {
+            id: buttonLabel
+            textFormat: Text.PlainText
+            anchors.centerIn: parent
+            width: Math.min(implicitWidth, parent.width - Style.space(20))
+            text: String(issueButton.modelData.label || "")
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            elide: Text.ElideRight
+          }
+
+          MouseArea {
+            id: buttonArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: mega.runIssueAction(issueButton.modelData.args)
+          }
+
+          PanelToolTip {
+            visible: buttonArea.containsMouse && text !== ""
+            text: String(issueButton.modelData.hint || "")
+            fontFamily: root.fontFamily
+          }
+        }
+      }
     }
   }
 

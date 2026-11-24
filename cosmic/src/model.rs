@@ -44,6 +44,10 @@ pub struct View {
     pub syncs: Vec<SyncRow>,
     /// The backups.
     pub backups: Vec<BackupRow>,
+    /// Files that are not syncing, at most five.
+    pub issues: Vec<Issue>,
+    /// A note on further files not syncing; empty when there are none.
+    pub issues_more_text: String,
     /// The notifications to show now, in order.
     pub notices: Vec<Notice>,
     /// With `ok`, a note to show under the state; empty when all is well.
@@ -114,6 +118,36 @@ pub struct BackupRow {
     pub kind: String,
     /// The second line: schedule, number kept and the last result.
     pub meta: String,
+}
+
+/// A file that is not syncing, with the buttons that can settle it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Issue {
+    /// A key that stays the same for this file while the list changes.
+    pub key: String,
+    /// The file's name.
+    pub title: String,
+    /// The title of the sync the file belongs to.
+    pub sync_title: String,
+    /// One sentence saying what is wrong.
+    pub text: String,
+    /// One short line for each copy or path of the file.
+    pub lines: Vec<String>,
+    /// The buttons to show.
+    pub actions: Vec<IssueAction>,
+}
+
+/// A button of an issue: pressing it runs the core with `args`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct IssueAction {
+    /// The button's text.
+    pub label: String,
+    /// The button's tooltip.
+    pub hint: String,
+    /// The core's command line, without the program name and options.
+    pub args: Vec<String>,
 }
 
 /// A notification the core decided is new.
@@ -197,6 +231,20 @@ mod tests {
         assert_eq!(view.backups[0].kind, "pending");
         assert_eq!(view.notices[0].urgency, "critical");
         assert_eq!(view.note(), "Some syncs could not be read");
+    }
+
+    #[test]
+    fn issues_are_read_with_their_buttons() {
+        let view: View = serde_json::from_str(r#"{"issues": [{"key": "issue:a", "title": "Budget.ods",
+            "syncTitle": "~/Documents", "text": "Two copies.", "lines": ["On MEGA: newer"],
+            "actions": [{"label": "Keep both", "hint": "Keeps both.", "args": ["resolve", "i1", "both"]}]}],
+            "issuesMoreText": "3 more"}"#)
+        .unwrap();
+        let issue = &view.issues[0];
+        assert_eq!(issue.sync_title, "~/Documents");
+        assert_eq!(issue.lines, ["On MEGA: newer"]);
+        assert_eq!(issue.actions[0].args, ["resolve", "i1", "both"]);
+        assert_eq!(view.issues_more_text, "3 more");
     }
 
     #[test]

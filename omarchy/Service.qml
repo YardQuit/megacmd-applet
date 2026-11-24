@@ -41,6 +41,8 @@ Item {
   property string transfersText: ""
   property var syncs: []
   property var backups: []
+  property var issues: []
+  property string issuesMoreText: ""
   property string error: ""
   property string actionStatus: ""
   // True when the account and its syncs and backups can be shown.
@@ -139,6 +141,8 @@ Item {
     transfersText = String(data.transfersText || "")
     syncs = data.syncs || []
     backups = data.backups || []
+    issues = data.issues || []
+    issuesMoreText = String(data.issuesMoreText || "")
     error = String(data.error || "")
     var notices = data.notices || []
     for (var i = 0; i < notices.length; i++) notify(notices[i])
@@ -211,6 +215,8 @@ Item {
   function removeSync(sync) { if (sync) runActions([["remove-sync", sync.id]]) }
   // Stops BACKUP; the copies made so far stay in MEGA.
   function removeBackup(backup) { if (backup) runActions([["remove-backup", backup.tag]]) }
+  // Runs the core command line ARGS that a button of a sync issue names.
+  function runIssueAction(args) { if (args && args.length > 0) runActions([args.map(String)]) }
   // Opens the local folder PATH in the file manager.
   function openFolder(path) { if (path) runActions([["open-folder", String(path)]]) }
 

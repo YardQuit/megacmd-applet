@@ -1,0 +1,99 @@
+{
+  "ok": true,
+  "installed": true,
+  "running": true,
+  "loggedIn": true,
+  "email": "user@example.com",
+  "usedBytes": 923589767331,
+  "totalBytes": 2199023255552,
+  "usagePercent": 42.0,
+  "syncs": [
+    {
+      "id": "sync001",
+      "local": "/home/user/Documents",
+      "remote": "/Sync/Documents",
+      "runState": "Running",
+      "status": "Pending",
+      "error": "Sync Issues (2)",
+      "size": "1.20 GB",
+      "files": 120,
+      "dirs": 10
+    },
+    {
+      "id": "sync002",
+      "local": "/home/user/Work",
+      "remote": "/Sync/Work",
+      "runState": "Running",
+      "status": "Synced",
+      "error": "",
+      "size": "3.40 GB",
+      "files": 860,
+      "dirs": 10
+    }
+  ],
+  "issues": [
+    {
+      "id": "issue001",
+      "syncId": "sync001",
+      "reason": "Unable to sync 'Budget.ods'. This file has conflicting copies.",
+      "paths": [
+        {
+          "path": "/home/user/Documents/Budget.ods",
+          "cloud": false,
+          "problem": "",
+          "modified": "2026-10-20 09:14:02",
+          "uploaded": "",
+          "size": "48.20 KB"
+        },
+        {
+          "path": "/Sync/Documents/Budget.ods",
+          "cloud": true,
+          "problem": "",
+          "modified": "2026-10-22 18:40:51",
+          "uploaded": "2026-10-22 18:40:53",
+          "size": "47.95 KB"
+        }
+      ]
+    },
+    {
+      "id": "issue002",
+      "syncId": "sync001",
+      "reason": "Unable to sync 'Notes.txt'. The file could not be read.",
+      "paths": [
+        {
+          "path": "/home/user/Documents/Notes.txt",
+          "cloud": false,
+          "problem": "Permission denied",
+          "modified": "2026-10-21 11:02:40",
+          "uploaded": "",
+          "size": "2.10 KB"
+        }
+      ]
+    }
+  ],
+  "backups": [
+    {
+      "tag": "101",
+      "local": "/home/user/Pictures",
+      "remote": "/Backups",
+      "state": "ACTIVE",
+      "maxBackups": 14,
+      "period": "0 0 2 * * *",
+      "next": "Sun, 25 Oct 2026 02:00:00 +0100",
+      "lastName": "Pictures_bk_20261024020000",
+      "lastDate": "Sat, 24 Oct 2026 02:00:00 +0200",
+      "lastStatus": "COMPLETE"
+    }
+  ],
+  "transfers": {
+    "downloads": 0,
+    "uploads": 0,
+    "downloaded": "",
+    "downloadTotal": "",
+    "uploaded": "",
+    "uploadTotal": "",
+    "downloadPercent": 0.0,
+    "uploadPercent": 0.0
+  },
+  "error": ""
+}

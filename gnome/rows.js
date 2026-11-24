@@ -1,4 +1,4 @@
-// rows.js: sync folder and backup rows of the MEGA extension's menu.
+// rows.js: sync folder, backup and sync issue rows of the MEGA extension's menu.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import Clutter from 'gi://Clutter';
@@ -22,6 +22,37 @@ const DIM_OPACITY = 180;
 function plainLabel(text, ellipsize) {
     const label = new St.Label({text, x_expand: true});
     label.clutter_text.ellipsize = ellipsize;
+    return label;
+}
+
+/**
+ * Lets LABEL wrap at word (or, for long words, character) boundaries over as
+ * many lines as it needs, instead of asking for more width.
+ *
+ * @param {St.Label} label - the label to change
+ * @returns {St.Label} LABEL
+ */
+function wrapped(label) {
+    label.clutter_text.line_wrap = true;
+    label.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+    label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+    return label;
+}
+
+/**
+ * A secondary-text label that shortens itself with an ellipsis where
+ * ELLIPSIZE says, or wraps to the menu's width when that is NONE.
+ *
+ * @param {string} text - the label's text, never read as markup
+ * @param {Pango.EllipsizeMode} ellipsize - where to shorten it
+ * @returns {St.Label} the label
+ */
+function dimLabel(text, ellipsize) {
+    const label = plainLabel(text, ellipsize);
+    if (ellipsize === Pango.EllipsizeMode.NONE)
+        wrapped(label);
+    label.add_style_class_name('megacmd-meta');
+    label.opacity = DIM_OPACITY;
     return label;
 }
 
@@ -65,10 +96,7 @@ class ItemRow extends PopupMenu.PopupBaseMenuItem {
         this.add_child(new St.Icon({icon_name: iconName, style_class: iconClass}));
         const text = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_expand: true});
         text.add_child(plainLabel(title, Pango.EllipsizeMode.MIDDLE));
-        const metaLabel = plainLabel(meta, Pango.EllipsizeMode.END);
-        metaLabel.add_style_class_name('megacmd-meta');
-        metaLabel.opacity = DIM_OPACITY;
-        text.add_child(metaLabel);
+        text.add_child(dimLabel(meta, Pango.EllipsizeMode.END));
         this.add_child(text);
 
         this.add_child(iconButton(actionIcon, actionText, onAction));
@@ -118,8 +146,117 @@ export function textItem(text, {warning = false, dim = false} = {}) {
         item.label.add_style_class_name('megacmd-warning-text');
     if (dim)
         item.label.opacity = DIM_OPACITY;
-    item.label.clutter_text.line_wrap = true;
-    item.label.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
-    item.label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+    wrapped(item.label);
     return item;
 }
+
+// Space between the buttons of a ButtonFlow, across and down, in pixels.
+const BUTTON_SPACING = 6;
+
+/**
+ * A row of buttons that wraps onto further lines at the width it is given.
+ * Each line holds as many buttons as fit, at their natural widths, from the
+ * left; it never asks for more width than its widest button.
+ */
+const ButtonFlow = GObject.registerClass(
+class ButtonFlow extends St.Widget {
+    /**
+     * The visible children in lines that fit WIDTH, each child with its
+     * natural width and height.
+     *
+     * @param {number} width - the width available, in pixels
+     * @returns {Array<Array<{child: Clutter.Actor, width: number, height: number}>>} the lines
+     */
+    _lines(width) {
+        const lines = [];
+        let line = [];
+        let used = 0;
+        for (const child of this.get_children()) {
+            if (!child.visible)
+                continue;
+            const [, childWidth] = child.get_preferred_width(-1);
+            const [, childHeight] = child.get_preferred_height(childWidth);
+            if (line.length > 0 && used + BUTTON_SPACING + childWidth > width) {
+                lines.push(line);
+                line = [];
+                used = 0;
+            }
+            used += (line.length > 0 ? BUTTON_SPACING : 0) + childWidth;
+            line.push({child, width: childWidth, height: childHeight});
+        }
+        if (line.length > 0)
+            lines.push(line);
+        return lines;
+    }
+
+    vfunc_get_preferred_width(forHeight) {
+        let minimum = 0;
+        let natural = 0;
+        for (const child of this.get_children()) {
+            if (!child.visible)
+                continue;
+            const [childMinimum, childNatural] = child.get_preferred_width(-1);
+            minimum = Math.max(minimum, childMinimum);
+            natural = Math.max(natural, childNatural);
+        }
+        return this.get_theme_node().adjust_preferred_width(minimum, natural);
+    }
+
+    vfunc_get_preferred_height(forWidth) {
+        const theme = this.get_theme_node();
+        const width = forWidth < 0 ? Infinity : theme.adjust_for_width(forWidth);
+        const height = this._lines(width).reduce((sum, line, index) =>
+            sum + (index > 0 ? BUTTON_SPACING : 0) + Math.max(...line.map(item => item.height)), 0);
+        return theme.adjust_preferred_height(height, height);
+    }
+
+    vfunc_allocate(box) {
+        this.set_allocation(box);
+        const content = this.get_theme_node().get_content_box(box);
+        let y = content.y1;
+        for (const line of this._lines(content.get_width())) {
+            let x = content.x1;
+            for (const item of line) {
+                item.child.allocate(Clutter.ActorBox.new(x, y, x + item.width, y + item.height));
+                x += item.width + BUTTON_SPACING;
+            }
+            y += Math.max(...line.map(item => item.height)) + BUTTON_SPACING;
+        }
+    }
+});
+
+/**
+ * A menu row for one file that is not syncing: its name, its sync, what is
+ * wrong with it, and a button for each way the core offers to deal with it.
+ *
+ * Construct with {title, syncTitle, text, lines, actions} and the callback
+ * {onAction}. ACTIONS are the core's `{label, hint, args}` buttons; pressing
+ * one calls onAction with its ARGS. Long names are shortened in the middle,
+ * and the buttons wrap onto further lines rather than widen the menu.
+ */
+export const IssueItem = GObject.registerClass(
+class IssueItem extends PopupMenu.PopupBaseMenuItem {
+    _init({title, syncTitle, text, lines, actions, onAction}) {
+        super._init({activate: false, can_focus: false});
+
+        const box = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_expand: true});
+        box.add_child(plainLabel(title, Pango.EllipsizeMode.MIDDLE));
+        box.add_child(dimLabel(syncTitle, Pango.EllipsizeMode.MIDDLE));
+        for (const line of [text, ...lines])
+            box.add_child(dimLabel(line, Pango.EllipsizeMode.NONE));
+
+        const buttons = new ButtonFlow({style_class: 'megacmd-issue-buttons', x_expand: true});
+        for (const action of actions) {
+            const button = new St.Button({
+                style_class: 'megacmd-issue-button',
+                label: action.label,
+                accessible_name: action.hint,
+                can_focus: true,
+            });
+            button.connect('clicked', () => onAction(action.args));
+            buttons.add_child(button);
+        }
+        box.add_child(buttons);
+        this.add_child(box);
+    }
+});

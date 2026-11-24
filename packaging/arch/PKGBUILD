@@ -38,7 +38,7 @@ check() {
 package_megacmd-applet() {
     pkgdesc+=" (shared core and guided dialogs)"
     arch=(any)
-    depends=(python gum procps-ng xdg-utils)
+    depends=(python gum procps-ng xdg-utils glib2)
     optdepends=("megacmd: the MEGA engine, from MEGA's own repository")
     cd "$pkgbase-$pkgver"
     make install-core DESTDIR="$pkgdir" PREFIX=/usr

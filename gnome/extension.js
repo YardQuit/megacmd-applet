@@ -13,7 +13,7 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 
 import {isCancelled, runCore} from './core.js';
 import {Notifier} from './notifications.js';
-import {ItemRow, textItem} from './rows.js';
+import {IssueItem, ItemRow, textItem} from './rows.js';
 
 // The symbolic icon of each state the shared core names, for the badge and rows.
 const STATE_ICONS = {
@@ -342,6 +342,7 @@ class MegaIndicator extends PanelMenu.Button {
 
         if (view.ok && view.loggedIn) {
             this._addAccount(view);
+            this._addIssues(view);
             this._addSyncs(view);
             this._addBackups(view);
             this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -392,6 +393,18 @@ class MegaIndicator extends PanelMenu.Button {
         });
         this._rows.set(item.key, row);
         this.menu.addMenuItem(row);
+    }
+
+    // The files that are not syncing, each with the core's buttons for it.
+    _addIssues(view) {
+        const issues = view.issues ?? [];
+        if (issues.length === 0)
+            return;
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(_('Not syncing')));
+        for (const issue of issues)
+            this.menu.addMenuItem(new IssueItem({...issue, onAction: args => this._act(args)}));
+        if (view.issuesMoreText)
+            this.menu.addMenuItem(textItem(view.issuesMoreText, {dim: true}));
     }
 
     _addSyncs(view) {

@@ -40,3 +40,18 @@
 .megacmd-warning-text {
   color: #e66100;
 }
+
+.megacmd-issue-buttons {
+  padding-top: 4px;
+}
+
+.megacmd-issue-button {
+  padding: 3px 10px;
+  border-radius: 99px;
+  background-color: rgba(128, 128, 128, 0.25);
+}
+
+.megacmd-issue-button:hover,
+.megacmd-issue-button:focus {
+  background-color: rgba(128, 128, 128, 0.45);
+}

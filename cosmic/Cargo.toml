@@ -3,7 +3,7 @@
 
 [package]
 name = "cosmic-applet-megacmd"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "MEGA sync folders, backups, storage and transfers in the COSMIC panel, using MEGAcmd."

@@ -6,6 +6,7 @@ the problems worth a notification, and the texts every applet shows.
 Run from the repository root with:  python3 -m unittest discover -s tests
 """
 
+import json
 import unittest
 
 from support import CheckedTestCase, fixture
@@ -199,6 +200,82 @@ class ViewTests(CheckedTestCase):
         notice = {"title": "t", "body": "b", "urgency": "normal", "icon": "cloud"}
         self.assertEqual(view.build_view(fixture("ok.json"), HOME, [notice])["notices"], [notice])
         self.assertEqual(view.build_view(fixture("ok.json"), HOME)["notices"], [])
+
+
+class SyncIssueTests(CheckedTestCase):
+    """Files that are not syncing: their state, texts, notices and buttons."""
+
+    def setUp(self):
+        super().setUp()
+        self.status = fixture("sync-issues.json")
+        self.conflict, self.unreadable = self.status["issues"]
+
+    def test_a_sync_with_issues_is_a_warning_not_a_stopped_sync(self):
+        sync = self.status["syncs"][0]
+        self.assertEqual((model.issue_count(sync), model.sync_kind(sync)), (2, "warning"))
+        self.assertTrue(model.sync_meta(sync).startswith("2 files not syncing · "))
+        self.assertEqual(model.overall_kind(self.status), "warning")
+        self.assertEqual(model.overall_text(self.status, "warning"), model.ISSUES_TEXT)
+
+    def test_storage_running_out_keeps_its_own_warning_text(self):
+        status = fixture("storage-90.json")
+        self.assertEqual(model.overall_text(status, model.overall_kind(status)), "Storage almost full")
+
+    def test_a_paused_sync_with_issues_shows_as_paused(self):
+        self.status["syncs"][0]["runState"] = "Disabled"
+        self.assertEqual(model.sync_kind(self.status["syncs"][0]), "paused")
+
+    def test_only_two_copies_of_one_file_make_a_conflict(self):
+        self.assertIsNotNone(model.issue_conflict(self.conflict))
+        self.assertIsNone(model.issue_conflict(self.unreadable))
+        local, cloud = self.conflict["paths"]
+        for paths in ([local, dict(local)], [dict(cloud, size=""), local], [dict(local, problem="Locked"), cloud],
+                      [local, dict(cloud, path="/Sync/Documents/Other.ods")], [local, cloud, cloud]):
+            self.assertIsNone(model.issue_conflict(dict(self.conflict, paths=paths)), paths)
+
+    def test_the_fingerprint_changes_with_any_date_or_size(self):
+        changed = json.loads(json.dumps(self.conflict))
+        changed["paths"][0]["modified"] = "2026-10-20 09:14:03"
+        self.assertEqual(model.issue_version(self.conflict), model.issue_version(json.loads(json.dumps(self.conflict))))
+        self.assertNotEqual(model.issue_version(self.conflict), model.issue_version(changed))
+
+    def test_a_conflict_shows_both_copies_and_which_is_newer(self):
+        self.assertEqual(model.issue_lines(self.conflict, HOME), ["On this computer: 2026-10-20 09:14 · 48.20 KB",
+                                                                   "On MEGA: 2026-10-22 18:40 · 47.95 KB · newer"])
+        self.assertEqual(model.issue_lines(self.unreadable, HOME),
+                         ["On this computer: ~/Documents/Notes.txt (Permission denied)"])
+
+    def test_each_issue_is_reported_once_without_its_name_or_folder(self):
+        found = [problem for problem in model.problems(self.status) if problem["kind"] == "issue"]
+        self.assertEqual([problem["key"] for problem in found], ["issue:issue001", "issue:issue002"])
+        self.assertEqual(found[0]["title"], "MEGA: a file has two different copies")
+        for problem in found:
+            for word in ("Budget", "Notes", "Documents"):
+                self.assertNotIn(word, problem["title"] + problem["body"])
+        self.assertFalse(any(problem["kind"] == "sync" for problem in model.problems(self.status)))
+
+    def test_a_conflict_gets_a_button_for_each_choice(self):
+        shown = view.build_view(self.status, HOME)
+        row = shown["issues"][0]
+        self.assertEqual((row["key"], row["title"], row["syncTitle"]),
+                         ("issue:issue001", "Budget.ods", "~/Documents ↔ /Sync/Documents"))
+        version = model.issue_version(self.conflict)
+        self.assertEqual([action["args"] for action in row["actions"]],
+                         [["resolve", "issue001", choice, version] for choice in ("both", "local", "cloud")])
+        self.assertTrue(all(action["label"] and action["hint"] for action in row["actions"]))
+        self.assertEqual((shown["kindText"], shown["issuesMoreText"]), (model.ISSUES_TEXT, ""))
+
+    def test_another_issue_gets_a_button_that_opens_its_folder(self):
+        row = view.build_view(self.status, HOME)["issues"][1]
+        self.assertEqual([action["args"] for action in row["actions"]], [["open-folder", "/home/user/Documents"]])
+        self.assertEqual(row["text"], self.unreadable["reason"])
+
+    def test_issues_beyond_those_shown_are_counted(self):
+        self.status["issues"] = [dict(self.conflict, id=f"i{n}") for n in range(view.ISSUES_SHOWN + 2)]
+        self.status["syncs"][0]["error"] = "Sync Issues (9)"
+        shown = view.build_view(self.status, HOME)
+        self.assertEqual(len(shown["issues"]), view.ISSUES_SHOWN)
+        self.assertTrue(shown["issuesMoreText"].startswith(f"{9 - view.ISSUES_SHOWN} more files not syncing"))
 
 
 if __name__ == "__main__":

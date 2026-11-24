@@ -32,6 +32,7 @@ Requires:       python3
 Requires:       gum
 Requires:       procps-ng
 Requires:       xdg-utils
+Requires:       glib2
 # MEGAcmd comes from MEGA's own repository, not from Fedora's.
 Recommends:     megacmd
 

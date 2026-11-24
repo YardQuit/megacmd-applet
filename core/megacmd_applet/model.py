@@ -7,7 +7,10 @@ is free of side effects. Applets show the results; none of them repeats
 these rules.
 """
 
+import hashlib
+import json
 import math
+import posixpath
 import re
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -26,6 +29,8 @@ OVERALL_TEXT = {
     "syncing": "Syncing",
     "synced": "Up to date",
 }
+# The "warning" state's text when files are not syncing, rather than storage running out.
+ISSUES_TEXT = "Some files are not syncing"
 
 # Colour name of each overall state's badge; applets map it to their theme.
 BADGE_COLOUR = {
@@ -47,6 +52,16 @@ OFFER_HINT = {
     "login": "Opens a terminal to log in to your MEGA account.",
     "start": "Opens a terminal that starts MEGAcmd and asks you to log in if needed.",
 }
+
+# The error MEGAcmd gives a sync with issues, e.g. "Sync Issues (2)".
+SYNC_ISSUES = re.compile(r"Sync Issues \((\d+)\)")
+
+# The ways to settle a conflict between a local and a cloud copy: button text and hint.
+CHOICES = (
+    ("both", "Keep both", "Renames MEGA's copy, so both copies stay in the folder."),
+    ("local", "Keep this computer's", "Moves MEGA's copy to the MEGA Rubbish bin; this computer's copy is uploaded."),
+    ("cloud", "Keep MEGA's", "Moves this computer's copy to the Trash; MEGA's copy is downloaded."),
+)
 
 # Sync run states that mean the sync is not running.
 PAUSED_RUN_STATES = ("Disabled", "Suspended", "Paused")
@@ -123,6 +138,17 @@ def sync_paused(sync):
     return str((sync or {}).get("runState") or "") in PAUSED_RUN_STATES
 
 
+def issue_count(sync):
+    """The number of sync issues SYNC reports, 0 for none."""
+    match = SYNC_ISSUES.fullmatch(str((sync or {}).get("error") or ""))
+    return int(match.group(1)) if match else 0
+
+
+def plural(count, word):
+    """COUNT and WORD, with an "s" unless COUNT is 1, e.g. "2 files"."""
+    return f"{grouped(count)} {word}" + ("" if count == 1 else "s")
+
+
 def any_running(syncs):
     """True when at least one of SYNCS runs, so "pause all" applies; else "resume all"."""
     return any(not sync_paused(sync) for sync in syncs or [])
@@ -136,13 +162,15 @@ def item_key(kind, item):
 
 
 def sync_kind(sync):
-    """One of "error", "paused", "syncing", "synced" for a sync."""
+    """One of "error", "paused", "warning" (some files not syncing), "syncing", "synced" for a sync."""
     if not sync:
         return "synced"
-    if sync.get("error"):
+    if sync.get("error") and not issue_count(sync):
         return "error"
     if sync_paused(sync):
         return "paused"
+    if issue_count(sync):
+        return "warning"
     status = str(sync.get("status") or "")
     if status == "Synced":
         return "synced"
@@ -160,6 +188,8 @@ def sync_meta(sync):
         parts = ["Error: " + str(sync.get("error"))]
     elif kind == "paused":
         parts = ["Paused"]
+    elif kind == "warning":
+        parts = [plural(issue_count(sync), "file") + " not syncing"]
     else:
         parts = [str(sync.get("status") or "Syncing")]
     parts.append(grouped(sync.get("files")) + " files")
@@ -309,6 +339,8 @@ def overall_kind(status):
         return "error"
     if "syncs" in (status.get("unread") or []):
         return "unknown"
+    if "warning" in kinds:
+        return "warning"
     if storage_level(storage_percent(status)) > 0:
         return "warning"
     if syncs and all(kind == "paused" for kind in kinds):
@@ -320,6 +352,88 @@ def overall_kind(status):
     return "synced"
 
 
+def overall_text(status, kind):
+    """The text of the overall state KIND of STATUS (see overall_kind)."""
+    if kind == "warning" and any(sync_kind(sync) == "warning" for sync in (status or {}).get("syncs") or []):
+        return ISSUES_TEXT
+    return OVERALL_TEXT[kind]
+
+
+def issue_name(issue):
+    """The name of the file or folder ISSUE is about, from its first path; "" without paths."""
+    paths = (issue or {}).get("paths") or []
+    return posixpath.basename(str(paths[0].get("path") or "").rstrip("/")) if paths else ""
+
+
+def issue_conflict(issue):
+    """The (local, cloud) paths of ISSUE when it is a choice between two copies of a file, else None.
+
+    That is when it has exactly one local and one cloud path, both files of
+    the same name, and MEGAcmd finds nothing wrong with either of them.
+    """
+    paths = (issue or {}).get("paths") or []
+    local = [path for path in paths if not path.get("cloud")]
+    cloud = [path for path in paths if path.get("cloud")]
+    if len(paths) != 2 or len(local) != 1 or len(cloud) != 1:
+        return None
+    if any(path.get("problem") or not path.get("size") for path in paths):
+        return None
+    if posixpath.basename(local[0].get("path") or "") != posixpath.basename(cloud[0].get("path") or ""):
+        return None
+    return local[0], cloud[0]
+
+
+def issue_version(issue):
+    """A short fingerprint of ISSUE's paths, dates and sizes, which changes whenever one of them does.
+
+    It leaves out the issue's ID, which MEGAcmd changes whenever it looks at
+    its syncs again, so the same conflict keeps its fingerprint.
+    """
+    data = json.dumps((issue or {}).get("paths"), sort_keys=True)
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()[:16]
+
+
+def issue_text(issue):
+    """What is wrong in ISSUE, in a sentence."""
+    if issue_conflict(issue):
+        return "The copy on this computer and the copy on MEGA differ. Choose which to keep."
+    return str((issue or {}).get("reason") or "MEGA cannot sync this.")
+
+
+def copy_line(where, path, newer):
+    """A line about one copy of a file, e.g. "On MEGA: 2026-11-22 13:06 · 31.36 KB · newer"."""
+    parts = [str(path.get("modified") or "")[:16], str(path.get("size") or "")]
+    if newer:
+        parts.append("newer")
+    return f"{where}: " + " · ".join(part for part in parts if part)
+
+
+def issue_lines(issue, home):
+    """The lines describing ISSUE's paths: each copy's date and size for a conflict, else each path."""
+    conflict = issue_conflict(issue)
+    if conflict:
+        local, cloud = conflict
+        local_date, cloud_date = str(local.get("modified") or ""), str(cloud.get("modified") or "")
+        return [copy_line("On this computer", local, local_date > cloud_date),
+                copy_line("On MEGA", cloud, cloud_date > local_date)]
+    lines = []
+    for path in (issue or {}).get("paths") or []:
+        where = "On MEGA" if path.get("cloud") else "On this computer"
+        shown = path.get("path") if path.get("cloud") else home_path(path.get("path"), home)
+        problem = f" ({path['problem']})" if path.get("problem") else ""
+        lines.append(f"{where}: {shown}{problem}")
+    return lines
+
+
+def issue_folder(issue, sync):
+    """The local folder to open for ISSUE of SYNC: the folder its local path names or lies in, else SYNC's."""
+    for path in (issue or {}).get("paths") or []:
+        if not path.get("cloud"):
+            local = str(path.get("path") or "")
+            return local if not path.get("size") else posixpath.dirname(local)
+    return str((sync or {}).get("local") or "")
+
+
 def offer(status):
     """What to offer instead of the account: "start", "login" or "" (see OFFER_TEXT)."""
     kind = overall_kind(status)
@@ -329,7 +443,7 @@ def offer(status):
 def problems(status):
     """Current problems worth a notification, each {kind, key, title, body}.
 
-    KIND is "sync" or "backup"; the key identifies the problem, so the same
+    KIND is "sync", "issue" or "backup"; the key identifies the problem, so the same
     problem is reported once. The texts name no folder: notification texts
     can reach other programs, and the panel a notification opens shows the
     folder.
@@ -343,6 +457,12 @@ def problems(status):
         reason = sync.get("error") or sync.get("status")
         found.append({"kind": "sync", "key": f"sync:{sync.get('id')}:{reason}", "title": "MEGA sync stopped",
                       "body": f"{reason}. Open the MEGA panel to see which folder."})
+    for issue in status.get("issues") or []:
+        if issue_conflict(issue):
+            title, body = "MEGA: a file has two different copies", "Open the MEGA panel to choose which to keep."
+        else:
+            title, body = "MEGA: a file is not syncing", "Open the MEGA panel to see which file."
+        found.append({"kind": "issue", "key": f"issue:{issue.get('id')}", "title": title, "body": body})
     for backup in status.get("backups") or []:
         if not backup_failed(backup):
             continue
@@ -353,6 +473,8 @@ def problems(status):
 
 
 def problem_group(kind, count):
-    """Title and body of one notification for COUNT problems of KIND ("sync" or "backup")."""
+    """Title and body of one notification for COUNT problems of KIND ("sync", "issue" or "backup")."""
+    if kind == "issue":
+        return {"title": f"MEGA: {count} files are not syncing", "body": "Open the MEGA panel to see which files."}
     title = f"MEGA: {count} syncs stopped" if kind == "sync" else f"MEGA: {count} backups did not complete"
     return {"title": title, "body": "Open the MEGA panel to see which folders."}

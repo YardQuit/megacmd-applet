@@ -1,9 +1,10 @@
-# actions.py: change MEGA syncs and backups, open folders and the guided dialogs.
+# actions.py: change MEGA syncs and backups, settle sync conflicts, open folders and the guided dialogs.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Run what an applet's panel asks for: pause, resume and remove syncs,
-remove backups, pause or resume all syncing, open a local folder in the file
-manager, and open the guided dialogs (log in, add a sync or backup, change a
-backup) in a terminal.
+remove backups, pause or resume all syncing, settle a conflict between two
+copies of a synced file, open a local folder in the file manager, and open
+the guided dialogs (log in, add a sync or backup, change a backup) in a
+terminal.
 
 Sync IDs, backup tags and the dialogs' arguments are checked before they
 reach a command line, so a value can never pass for an option. Commands run
@@ -12,6 +13,7 @@ without a shell.
 
 import os
 import pathlib
+import posixpath
 import re
 import shlex
 import shutil
@@ -32,6 +34,12 @@ TERMINALS = (("xdg-terminal-exec", []), ("ptyxis", ["--"]), ("kgx", ["--"]), ("g
 GUIDED = ("mega-account-login", "mega-add-sync", "mega-add-backup", "mega-edit-backup")
 # The mega-sync option of each sync action.
 SYNC_FLAGS = {"pause": "--pause", "resume": "--enable", "remove-sync": "--delete"}
+# Characters MEGAcmd may read as wildcards in a cloud path.
+WILDCARDS = re.compile(r"[*?]")
+# MEGAcmd's path of the MEGA Rubbish bin.
+RUBBISH = "//bin"
+# Most numbered names tried when looking for a free one.
+NAME_TRIES = 100
 
 
 class ActionError(Exception):
@@ -216,3 +224,111 @@ def guided_command(name, args, terminal=None, path=None):
 def open_guided(name, args, terminal=None, path=None):
     """Open the guided dialog NAME in a terminal, without waiting for it; see guided_command."""
     detach(guided_command(name, args, terminal, path))
+
+
+def check_inside(path, folder):
+    """Raise ActionError unless the absolute PATH lies inside FOLDER and has no "." or ".." parts."""
+    base = str(folder or "").rstrip("/")
+    if not base or posixpath.normpath(path) != path or not path.startswith(base + "/"):
+        raise ActionError(f"Not inside the synced folder {folder}: {path}")
+
+
+def cloud_exists(path, timeout):
+    """True when the MEGA path PATH exists; raises ActionError when MEGAcmd does not answer."""
+    code, _ = megacmd.run(["mega-ls", path], timeout)
+    if code == megacmd.TIMED_OUT:
+        raise ActionError("MEGAcmd did not answer in time")
+    if code == megacmd.NOT_FOUND:
+        raise ActionError("MEGAcmd is not installed")
+    return code == 0
+
+
+def free_name(folder, name, taken, first):
+    """A path in FOLDER for NAME that TAKEN (a function of a path) says is free.
+
+    Tries NAME itself when FIRST is 0, then "stem (1).ext", "stem (2).ext"
+    and so on from FIRST; raises ActionError when none of NAME_TRIES is free.
+    """
+    stem, ext = posixpath.splitext(name)
+    for number in range(first, first + NAME_TRIES):
+        path = posixpath.join(folder, name if number == 0 else f"{stem} ({number}){ext}")
+        if not taken(path):
+            return path
+    raise ActionError(f"No free name for {name}")
+
+
+def move_to_trash(path):
+    """Move the local file PATH to the desktop's Trash with gio; raises ActionError when that fails."""
+    gio = shutil.which("gio")
+    if gio is None:
+        raise ActionError("Cannot move the file to the Trash: gio is not installed")
+    code, output = megacmd.run([gio, "trash", path], 60)
+    if code != 0:
+        raise ActionError(output.strip() or f"Could not move {path} to the Trash")
+
+
+def read_conflict(issue_id, version, timeout):
+    """Return (local path, cloud path) of the conflict ISSUE_ID, read again from MEGAcmd.
+
+    MEGAcmd gives an issue a new ID whenever it looks at its syncs again, so
+    an issue that is no longer listed under ISSUE_ID is looked for by its
+    fingerprint VERSION (model.issue_version). Raises ActionError unless the
+    issue still exists with that fingerprint, is a choice between two copies of a file
+    (model.issue_conflict), and both copies lie inside its sync's folders;
+    the local copy must be a file, not a link, and the cloud path must have
+    no wildcard characters.
+    """
+    syncs = read_syncs_for_action(timeout)
+    issues = megacmd.read_sync_issues(timeout)
+    if issues is None:
+        raise ActionError("Could not read the sync issues from MEGAcmd")
+    issue = next((issue for issue in issues if issue["id"] == issue_id), None)
+    if issue is None:
+        issue = next((issue for issue in issues if model.issue_version(issue) == version), None)
+    if issue is None:
+        raise ActionError("This issue is gone; MEGA may have settled it already")
+    if model.issue_version(issue) != version:
+        raise ActionError("This conflict has changed; look at it again")
+    conflict = model.issue_conflict(issue)
+    if conflict is None:
+        raise ActionError("This issue is not a choice between two copies")
+    sync = next((sync for sync in syncs if sync["id"] == issue["syncId"]), None)
+    if sync is None:
+        raise ActionError("The sync of this issue is gone")
+    local, cloud = conflict[0]["path"], conflict[1]["path"]
+    check_inside(local, sync["local"])
+    check_inside(cloud, sync["remote"])
+    if WILDCARDS.search(cloud):
+        raise ActionError("MEGAcmd cannot change a file whose name has \"*\" or \"?\"")
+    if os.path.islink(local) or not os.path.isfile(local):
+        raise ActionError(f"Not a file: {local}")
+    return local, cloud
+
+
+def resolve_issue(issue_id, choice, version, timeout=20):
+    """Settle the conflict ISSUE_ID between a local and a cloud copy of a file by CHOICE.
+
+    CHOICE is one of model.CHOICES: "local" keeps this computer's copy and
+    moves MEGA's to the MEGA Rubbish bin, "cloud" keeps MEGA's copy and
+    moves the local one to the Trash, "both" renames MEGA's copy to the
+    first free "name (1).ext", "name (2).ext" and so on. The sync then
+    copies what is kept across. Nothing is deleted, so every choice can be
+    undone. VERSION is the fingerprint the issue was shown with; see
+    read_conflict for what is checked first. Raises ActionError when refused
+    or when a step fails.
+    """
+    check_sync_id(issue_id)
+    if choice not in [name for name, _, _ in model.CHOICES]:
+        raise ActionError(f"Not a choice: {choice}")
+    local, cloud = read_conflict(issue_id, version, timeout)
+    if choice == "cloud":
+        move_to_trash(local)
+        return
+    name = posixpath.basename(cloud)
+    if choice == "local":
+        target = free_name(RUBBISH, name, lambda path: cloud_exists(path, timeout), 0)
+    else:
+        local_folder = posixpath.dirname(local)
+        target = free_name(posixpath.dirname(cloud), name, lambda path: os.path.lexists(
+            posixpath.join(local_folder, posixpath.basename(path))) or cloud_exists(path, timeout), 1)
+    run_all([["mega-mv", cloud, target]])

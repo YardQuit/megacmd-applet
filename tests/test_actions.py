@@ -13,9 +13,9 @@ import os
 import unittest
 from unittest import mock
 
-from support import ROOT, CheckedTestCase, FakeMegaCmd, logged_in, write_script
+from support import ROOT, CheckedTestCase, FakeMegaCmd, issue_details, logged_in, write_script
 
-from megacmd_applet import actions, megacmd
+from megacmd_applet import actions, megacmd, model
 
 SYNC_LIST = "mega-sync --col-separator=\x1f --output-cols=" + ",".join(megacmd.SYNC_COLUMNS)
 
@@ -290,6 +290,117 @@ class GuidedTests(CheckedTestCase):
     def test_only_the_known_dialogs_can_be_opened(self):
         with self.assertRaises(actions.ActionError):
             actions.guided_command("../../bin/sh", [], terminal="term")
+
+
+class ResolveTests(FakeTestCase):
+    """Settling a conflict between this computer's copy of a file and MEGA's."""
+
+    def setUp(self):
+        super().setUp()
+        self.folder = self.fake.base / "home" / "Documents"
+        self.folder.mkdir()
+        self.local = self.folder / "Budget.ods"
+        self.local.write_text("local copy")
+        row = ["abc", str(self.folder), "/Sync/Documents", "Running", "Pending", "Sync Issues (1)", "1 B", "1", "0"]
+        logged_in(self.fake, megacmd.SEPARATOR.join(megacmd.SYNC_COLUMNS) + "\n" + megacmd.SEPARATOR.join(row) + "\n")
+        self.set_issue(str(self.local), "<CLOUD>/Sync/Documents/Budget.ods")
+        self.fake.set("mega-ls", "[API:err: 10:00:00] Couldn't find", 53)
+
+    def set_issue(self, local, cloud):
+        """Makes mega-sync-issues report a conflict between LOCAL and CLOUD; keeps its fingerprint."""
+        text = issue_details("iss_1", "abc", "Unable to sync 'Budget.ods'. This file has conflicting copies.",
+                             (local, "-", "2026-10-20 09:14:02", "-", "48.20 KB"),
+                             (cloud, "-", "2026-10-22 18:40:51", "2026-10-22 18:40:53", "47.95 KB"))
+        self.fake.set("mega-sync-issues", text)
+        self.version = model.issue_version(megacmd.parse_sync_issues(text)[0])
+
+    def resolve(self, choice, version=None):
+        """Runs `resolve iss_1 CHOICE VERSION`; returns the process and the commands that change files."""
+        done = self.fake.run_cli("resolve", "iss_1", choice, version or self.version)
+        changes = [call for call in self.fake.calls() if call.split()[0] in ("mega-mv", "gio")]
+        return done, changes
+
+    def test_keeping_this_computers_copy_moves_megas_to_the_rubbish_bin(self):
+        done, changes = self.resolve("local")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(changes, ["mega-mv /Sync/Documents/Budget.ods //bin/Budget.ods"])
+
+    def test_keeping_megas_copy_moves_this_computers_to_the_trash(self):
+        done, changes = self.resolve("cloud")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(changes, [f"gio trash {self.local}"])
+
+    def test_keeping_both_renames_megas_copy_to_a_name_free_on_both_sides(self):
+        (self.folder / "Budget (1).ods").write_text("taken")
+        done, changes = self.resolve("both")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(changes, ["mega-mv /Sync/Documents/Budget.ods /Sync/Documents/Budget (2).ods"])
+
+    def test_a_conflict_that_changed_since_it_was_shown_is_left_alone(self):
+        done, changes = self.resolve("local", "0" * 16)
+        self.assertEqual((done.returncode, changes), (1, []))
+        self.assertIn("changed", done.stderr)
+
+    def test_a_conflict_under_a_new_id_is_found_by_its_fingerprint(self):
+        text = (self.fake.dir / "mega-sync-issues.out").read_text().replace("iss_1", "iss_9")
+        self.fake.set("mega-sync-issues", text)
+        done, changes = self.resolve("local")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(changes, ["mega-mv /Sync/Documents/Budget.ods //bin/Budget.ods"])
+
+    def test_a_conflict_that_is_gone_is_left_alone(self):
+        self.fake.set("mega-sync-issues", "")
+        done, changes = self.resolve("cloud")
+        self.assertEqual((done.returncode, changes), (1, []))
+        self.assertIn("gone", done.stderr)
+
+    def test_copies_outside_the_synced_folders_are_refused(self):
+        outside = self.fake.base / "home" / "Budget.ods"
+        outside.write_text("elsewhere")
+        for local, cloud in ((str(outside), "<CLOUD>/Sync/Documents/Budget.ods"),
+                             (str(self.folder / ".." / "Budget.ods"), "<CLOUD>/Sync/Documents/Budget.ods"),
+                             (str(self.local), "<CLOUD>/Other/Budget.ods")):
+            self.set_issue(local, cloud)
+            for choice in ("local", "cloud", "both"):
+                done, changes = self.resolve(choice)
+                self.assertEqual((done.returncode, changes), (1, []), (local, cloud, choice))
+
+    def test_a_link_in_place_of_the_local_copy_is_refused(self):
+        target = self.fake.base / "home" / "target.ods"
+        target.write_text("elsewhere")
+        self.local.unlink()
+        self.local.symlink_to(target)
+        done, changes = self.resolve("cloud")
+        self.assertEqual((done.returncode, changes), (1, []))
+        self.assertTrue(target.exists())
+
+    def test_a_cloud_name_megacmd_could_read_as_a_pattern_is_refused(self):
+        wild = self.folder / "Budget*.ods"
+        wild.write_text("local copy")
+        self.set_issue(str(wild), "<CLOUD>/Sync/Documents/Budget*.ods")
+        done, changes = self.resolve("local")
+        self.assertEqual((done.returncode, changes), (1, []))
+
+    def test_an_unknown_choice_or_an_id_like_an_option_is_refused(self):
+        for args in (("resolve", "iss_1", "delete", self.version), ("resolve", "--", "-x", "local", self.version)):
+            self.assertNotEqual(self.fake.run_cli(*args).returncode, 0, args)
+        self.assertEqual(self.fake.calls(), [])
+
+
+class FreeNameTests(CheckedTestCase):
+    """Finding a free name for a renamed or discarded copy."""
+
+    def test_the_name_itself_is_tried_first_only_when_asked(self):
+        self.assertEqual(actions.free_name("//bin", "a.txt", lambda path: False, 0), "//bin/a.txt")
+        self.assertEqual(actions.free_name("/S", "a.txt", lambda path: False, 1), "/S/a (1).txt")
+
+    def test_numbers_count_up_past_taken_names(self):
+        taken = {"//bin/.bashrc", "//bin/.bashrc (1)"}
+        self.assertEqual(actions.free_name("//bin", ".bashrc", taken.__contains__, 0), "//bin/.bashrc (2)")
+
+    def test_no_free_name_is_an_error(self):
+        with self.assertRaises(actions.ActionError):
+            actions.free_name("/S", "a.txt", lambda path: True, 1)
 
 
 if __name__ == "__main__":

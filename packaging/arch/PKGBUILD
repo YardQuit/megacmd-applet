@@ -6,7 +6,7 @@
 
 pkgbase=megacmd-applet
 pkgname=(megacmd-applet megacmd-applet-omarchy megacmd-applet-kde megacmd-applet-gnome megacmd-applet-cosmic)
-pkgver=0.2.1
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="MEGA sync folders, backups, storage and transfers in the desktop's panel"
 arch=(x86_64)

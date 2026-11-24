@@ -12,7 +12,7 @@
         "Id": "io.github.yardquit.megacmd",
         "License": "GPL-3.0-or-later",
         "Name": "MEGA",
-        "Version": "0.2.1",
+        "Version": "0.3.0",
         "Website": "https://github.com/YardQuit/megacmd-applet"
     },
     "X-Plasma-API-Minimum-Version": "6.0"

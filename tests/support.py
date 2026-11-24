@@ -144,8 +144,13 @@ class FakeMegaCmd:
         return run_cli(*args, env=self.env)
 
     def calls(self):
-        """The stand-in commands run so far, one line of arguments each."""
-        return self.log.read_text().splitlines() if self.log.exists() else []
+        """The stand-in commands run so far, one line of arguments each.
+
+        Only finished lines count: a stand-in writes its name and each
+        argument separately, so a line still being written is left out.
+        """
+        text = self.log.read_text() if self.log.exists() else ""
+        return text[:text.rfind("\n") + 1].splitlines()
 
     def wait_for_calls(self, count, seconds=5):
         """The calls once there are COUNT of them, waiting up to SECONDS for detached commands."""

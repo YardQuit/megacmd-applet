@@ -180,6 +180,14 @@ class MegacmdDirTests(CheckedTestCase):
         self.assertEqual(calls[-1], str(ROOT / "bin" / "mega-account-login"))
 
 
+class FakeLogTests(FakeTestCase):
+    """Reading what the stand-in commands logged."""
+
+    def test_a_call_still_being_logged_is_not_counted(self):
+        self.fake.log.write_text("mega-sync --pause s1\nxdg-open")
+        self.assertEqual(self.fake.calls(), ["mega-sync --pause s1"])
+
+
 class OpenFolderTests(FakeTestCase):
     """open-folder opens existing absolute folders only."""
 
